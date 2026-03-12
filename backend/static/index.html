@@ -319,7 +319,7 @@ function App() {
               <Field label="Nt" unit="tubes" value={ftSpec.Nt} onChange={v=>uF("Nt",parseInt(v)||1)}/>
               <Field label="FPI" unit="fins/in" value={ftSpec.FPI} onChange={v=>uF("FPI",v)}/>
               <Field label="Fin" options={["plain","wavy","louver","slit"]} value={ftSpec.fin_type}
-                onChange={v=>{uF("fin_type",v);setAirCorr({mode:"auto",selected:null});}}/>
+                onChange={v=>{uF("fin_type",v);setAirCorr(p=>({...p,selected:null}));}}/>
               {/* Correlation Mode: Auto / Manual */}
               <div style={{marginBottom:6}}>
                 <div style={{fontSize:10,color:C.dim,marginBottom:3}}>Air-side j Correlation</div>
@@ -337,10 +337,17 @@ function App() {
               {/* Manual mode: ranked correlation list */}
               {airCorr.mode==="manual"&&(()=>{
                 const ranked = result?.correlation_recommendation?.ranked;
-                if(!ranked||ranked.length===0) return (
-                  <div style={{fontSize:10,color:C.dim,padding:"6px 8px",marginBottom:8,
-                    background:`${C.border}33`,borderRadius:6}}>
-                    시뮬레이션을 실행하면 추천순 상관식 목록이 표시됩니다
+                // Map correlation IDs to fin types to detect stale results
+                const corrFinMap = {wang2000_plain:'plain',gray_webb1986:'plain',kim1999_plain:'plain',kayansayan1993:'plain',
+                  wang1999_wavy:'wavy',wang2002_wavy:'wavy',beecher_fagan1987:'wavy',kim1997_wavy:'wavy',jang1996_wavy:'wavy',
+                  wang1999_louver:'louver',chang2000_louver:'louver',wang2000_louver:'louver',achaichia_cowell1988:'louver',davenport1983:'louver',
+                  wang2001_slit:'slit',manglik_bergles1995:'slit',nakayama_xu1983:'slit',du_wang2000:'slit'};
+                const resultMatchesFin = ranked?.some(r=>corrFinMap[r.id]===ftSpec.fin_type);
+
+                if(!ranked || ranked.length===0 || !resultMatchesFin) return (
+                  <div style={{fontSize:10,color:C.warn,padding:"8px",marginBottom:8,
+                    background:`${C.warn}11`,border:`1px solid ${C.warn}33`,borderRadius:6}}>
+                    🔄 <b>RUN SIMULATION</b>을 클릭하면 <b>{ftSpec.fin_type}</b> 핀의 추천순 상관식 목록이 표시됩니다
                   </div>
                 );
                 return (
