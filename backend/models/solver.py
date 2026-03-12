@@ -477,6 +477,7 @@ class HXSolver:
                 Re_Lp=Re_Lp, Lp=spec.louver_pitch,
                 theta=spec.louver_angle, Fp=spec.fin_pitch,
                 fin_thickness=spec.fin_thickness,
+                Fl=spec.fin_height, Td=spec.D,
             )
 
         h_o = j * G_air * cp / Pr ** (2 / 3)

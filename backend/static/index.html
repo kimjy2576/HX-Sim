@@ -454,8 +454,91 @@ function App() {
               <Field label="Lp" unit="mm" value={mchxSpec.louver_pitch*1000} onChange={v=>uM("louver_pitch",v/1000)}/>
               <Field label="θ" unit="°" value={mchxSpec.louver_angle} onChange={v=>uM("louver_angle",v)}/>
               <Field label="Fp" unit="mm" value={mchxSpec.fin_pitch*1000} onChange={v=>uM("fin_pitch",v/1000)}/>
+              <Field label="Fl" unit="mm" value={mchxSpec.fin_height*1000} onChange={v=>uM("fin_height",v/1000)}/>
               <Field label="n_slabs" value={mchxSpec.n_slabs} onChange={v=>uM("n_slabs",parseInt(v)||1)}/>
               <Field label="N_seg" unit="/tube" value={mchxSpec.N_seg} onChange={v=>uM("N_seg",parseInt(v)||1)}/>
+              {/* MCHX Correlation selector */}
+              <div style={{marginBottom:6,marginTop:8}}>
+                <div style={{fontSize:10,color:C.dim,marginBottom:3}}>Air-side j Correlation</div>
+                <div style={{display:"flex",gap:4}}>
+                  {["auto","manual"].map(m=>(
+                    <button key={m} onClick={()=>setAirCorr(p=>({...p,mode:m,selected:m==="auto"?null:p.selected}))} style={{
+                      flex:1,padding:"5px 0",borderRadius:6,border:"none",cursor:"pointer",
+                      fontWeight:700,fontSize:10,fontFamily:"inherit",
+                      background:airCorr.mode===m?(m==="auto"?C.accent:C.accent2):C.bg,
+                      color:airCorr.mode===m?C.bg:C.dim}}>
+                      {m==="auto"?"⚡ Auto":"🔧 Manual"}</button>
+                  ))}
+                </div>
+              </div>
+              {/* MCHX Manual mode */}
+              {airCorr.mode==="manual"&&(()=>{
+                const ranked = result?.correlation_recommendation?.ranked;
+                const mchxCorrs = ['chang_wang1997','chang_wang2006','kim_bullard2002','park_jacobi2009',
+                  'dong2007','sunden_svantesson1992','webb_trauger1991','achaichia_cowell1988_mchx','davenport1983_mchx'];
+                const resultMatchesMchx = ranked?.some(r=>mchxCorrs.includes(r.id));
+                if(!ranked||!resultMatchesMchx) return (
+                  <div style={{fontSize:10,color:C.warn,padding:"8px",marginBottom:8,
+                    background:`${C.warn}11`,border:`1px solid ${C.warn}33`,borderRadius:6}}>
+                    🔄 <b>RUN SIMULATION</b>을 클릭하면 MCHX 추천순 상관식 목록이 표시됩니다
+                  </div>
+                );
+                return (
+                  <div style={{marginBottom:8}}>
+                    {ranked.map(r=>{
+                      const sel = airCorr.selected===r.id;
+                      const clr = r.status==="error"?C.err:r.status==="warning"?C.warn:C.success;
+                      const icon = r.status==="error"?"🚫":r.status==="warning"?"⚠️":"✅";
+                      return (
+                        <div key={r.id} onClick={()=>setAirCorr(p=>({...p,selected:r.id}))}
+                          style={{padding:"6px 8px",marginBottom:3,borderRadius:6,cursor:"pointer",
+                            border:`1px solid ${sel?clr:C.border}`,background:sel?`${clr}15`:C.bg}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{fontSize:10}}>{icon}</span>
+                            <span style={{fontSize:11,fontWeight:sel?700:400,color:sel?C.text:C.dim,flex:1}}>{r.name}</span>
+                            <span style={{fontSize:9,color:clr}}>{r.in_range}</span>
+                          </div>
+                          <div style={{fontSize:9,color:C.dim,marginTop:2}}>
+                            {r.ref} · {r.samples>0?`${r.samples}샘플`:"범용"} · Re {r.Re_range[0]}~{r.Re_range[1]}
+                            {!r.Re_ok&&<span style={{color:C.warn}}> (Re 범위 밖)</span>}
+                          </div>
+                          {sel&&r.warnings.length>0&&(
+                            <div style={{marginTop:3,paddingTop:3,borderTop:`1px solid ${clr}22`}}>
+                              {r.warnings.map((w,i)=>(
+                                <div key={i} style={{fontSize:9,color:w.severity==="error"?C.err:C.warn}}>
+                                  {w.severity==="error"?"🚫":"⚠️"} {w.param}: {w.value} (범위 {w.range})
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+              {/* MCHX Auto mode info */}
+              {airCorr.mode==="auto"&&result?.correlation_recommendation&&hxType==="MCHX"&&(()=>{
+                const rec = result.correlation_recommendation;
+                const usedCorr = result.correlations_used?.air_j;
+                const usedInfo = rec.ranked?.find(r=>r.id===usedCorr);
+                if(!usedInfo) return null;
+                const clr = usedInfo.status==="error"?C.err:usedInfo.status==="warning"?C.warn:C.success;
+                return (
+                  <div style={{fontSize:10,padding:"6px 8px",marginBottom:8,borderRadius:6,
+                    background:`${clr}11`,border:`1px solid ${clr}33`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                      <span style={{fontWeight:700,color:C.accent}}>⚡ 자동 선택:</span>
+                      <span style={{color:C.text,fontWeight:600}}>{usedInfo.name}</span>
+                      <span style={{fontSize:9,color:clr}}>({usedInfo.in_range})</span>
+                    </div>
+                    <div style={{fontSize:9,color:C.dim,marginBottom:2}}>Re_Lp = {result.Re_Dc}</div>
+                    {rec.reasons?.map((r,i)=>
+                      <div key={i} style={{color:C.dim,fontSize:9,marginTop:1}}>• {r}</div>
+                    )}
+                  </div>
+                );
+              })()}
             </InputGroup>
           )}
 

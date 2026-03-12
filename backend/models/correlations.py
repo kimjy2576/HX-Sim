@@ -307,11 +307,125 @@ AIRSIDE_CORRELATIONS = {
         "Re_range": [100, 3000],
         "samples": 18,
         "params": ["Re_Lp", "θ", "Fp", "Lp"],
-        "note": "MCHX 루버핀 전용. Re_Lp 기반. 18샘플 간략화 버전.",
+        "note": "MCHX 루버핀. Re_Lp 기반 3-param 간략화.",
         "geo_bounds": {
             "θ":        {"min": 20, "max": 35,    "unit": "°"},
             "Lp":       {"min": 0.7, "max": 2.5,  "unit": "mm"},
             "Fp":       {"min": 1.0, "max": 3.0,  "unit": "mm"},
+        },
+    },
+    "chang_wang2006": {
+        "name": "Chang & Wang (2006)",
+        "ref": "IJHMT 49, 3439-3450",
+        "fin_types": ["mchx_louver"],
+        "Re_range": [100, 5000],
+        "samples": 91,
+        "params": ["Re_Lp", "θ", "Fp", "Lp", "Fl", "Ll", "Td", "Tp", "δ"],
+        "note": "1997 일반화. 91샘플, 8개 기하변수. MCHX 가장 포괄적.",
+        "geo_bounds": {
+            "θ":        {"min": 15, "max": 35,    "unit": "°"},
+            "Lp":       {"min": 0.7, "max": 2.5,  "unit": "mm"},
+            "Fp":       {"min": 0.8, "max": 3.5,  "unit": "mm"},
+            "Fl":       {"min": 4.0, "max": 12.0, "unit": "mm"},
+            "Td":       {"min": 15, "max": 30,    "unit": "mm"},
+        },
+    },
+    "kim_bullard2002": {
+        "name": "Kim & Bullard (2002)",
+        "ref": "IJREF 25, 390-400",
+        "fin_types": ["mchx_louver"],
+        "Re_range": [100, 600],
+        "samples": 45,
+        "params": ["Re_Lp", "θ", "Fp", "Lp", "Fl", "Td", "Ll", "Tp"],
+        "note": "저Re 특화. A/C 응축기용. 45샘플.",
+        "geo_bounds": {
+            "θ":        {"min": 15, "max": 29,    "unit": "°"},
+            "Lp":       {"min": 0.8, "max": 1.4,  "unit": "mm"},
+            "Fp":       {"min": 1.0, "max": 2.5,  "unit": "mm"},
+            "Fl":       {"min": 5.0, "max": 8.0,  "unit": "mm"},
+        },
+    },
+    "park_jacobi2009": {
+        "name": "Park & Jacobi (2009)",
+        "ref": "IJREF 32, 510-526",
+        "fin_types": ["mchx_louver"],
+        "Re_range": [100, 500],
+        "samples": 69,
+        "params": ["Re_Lp", "θ", "Fp", "Lp", "Fl"],
+        "note": "극저Re 냉장 증발기. 69샘플. dry/wet 조건 모두 검증.",
+        "geo_bounds": {
+            "θ":        {"min": 15, "max": 30,    "unit": "°"},
+            "Lp":       {"min": 0.7, "max": 1.5,  "unit": "mm"},
+            "Fp":       {"min": 1.0, "max": 2.0,  "unit": "mm"},
+        },
+    },
+    "dong2007": {
+        "name": "Dong, Chen & Zhang (2007)",
+        "ref": "Appl. Therm. Eng. 27, 33-43",
+        "fin_types": ["mchx_louver"],
+        "Re_range": [200, 2500],
+        "samples": 20,
+        "params": ["Re_Lp", "θ", "Fp", "Lp", "Fl", "Td"],
+        "note": "중국 데이터 기반 소형 MCHX. 20샘플.",
+        "geo_bounds": {
+            "θ":        {"min": 18, "max": 32,    "unit": "°"},
+            "Lp":       {"min": 0.8, "max": 2.0,  "unit": "mm"},
+            "Fp":       {"min": 1.0, "max": 2.5,  "unit": "mm"},
+        },
+    },
+    "sunden_svantesson1992": {
+        "name": "Sunden & Svantesson (1992)",
+        "ref": "Exp. Heat Transfer 5, 203-217",
+        "fin_types": ["mchx_louver"],
+        "Re_range": [100, 1500],
+        "samples": 0,
+        "params": ["Re_Lp", "θ", "Fp", "Lp"],
+        "note": "초기 유럽 MCHX 데이터. 저Re 범위.",
+        "geo_bounds": {
+            "θ":        {"min": 20, "max": 35,    "unit": "°"},
+            "Lp":       {"min": 0.7, "max": 2.0,  "unit": "mm"},
+            "Fp":       {"min": 1.0, "max": 2.5,  "unit": "mm"},
+        },
+    },
+    "webb_trauger1991": {
+        "name": "Webb & Trauger (1991)",
+        "ref": "Exp. Thermal Fluid Sci. 4, 205-217",
+        "fin_types": ["mchx_louver"],
+        "Re_range": [400, 4000],
+        "samples": 0,
+        "params": ["Re_Lp", "θ", "Fp", "Lp"],
+        "note": "louver flow efficiency 개념 도입. 고Re MCHX.",
+        "geo_bounds": {
+            "θ":        {"min": 20, "max": 35,    "unit": "°"},
+            "Lp":       {"min": 1.0, "max": 2.5,  "unit": "mm"},
+            "Fp":       {"min": 1.0, "max": 3.0,  "unit": "mm"},
+        },
+    },
+    "achaichia_cowell1988_mchx": {
+        "name": "Achaichia & Cowell (1988)",
+        "ref": "Exp. TFS 1(4), 361-367",
+        "fin_types": ["mchx_louver"],
+        "Re_range": [120, 8000],
+        "samples": 0,
+        "params": ["Re_Lp", "θ", "Fp", "Lp"],
+        "note": "flat tube 초기. FT/MCHX 공용 가능.",
+        "geo_bounds": {
+            "Lp":       {"min": 0.8, "max": 2.5,  "unit": "mm"},
+            "θ":        {"min": 15, "max": 35,    "unit": "°"},
+            "Fp":       {"min": 1.0, "max": 3.0,  "unit": "mm"},
+        },
+    },
+    "davenport1983_mchx": {
+        "name": "Davenport (1983)",
+        "ref": "HTFS DR86",
+        "fin_types": ["mchx_louver"],
+        "Re_range": [300, 4000],
+        "samples": 0,
+        "params": ["Re_Lp", "θ", "Lp"],
+        "note": "산업 최초 louver 상관식. 2-zone Re model.",
+        "geo_bounds": {
+            "Lp":       {"min": 1.0, "max": 2.5,  "unit": "mm"},
+            "θ":        {"min": 20, "max": 35,    "unit": "°"},
         },
     },
 }
@@ -433,6 +547,23 @@ def build_spec_values(ft_spec, geo, Re_Dc: float) -> dict:
     return vals
 
 
+def build_mchx_spec_values(mchx_spec, geo, Re_Lp: float) -> dict:
+    """
+    Build spec_values dict from MCHXSpec for MCHX correlation validation.
+    All dimensional values in mm for comparison with bounds.
+    """
+    vals = {
+        "Re_Lp": Re_Lp,
+        "θ": mchx_spec.louver_angle,             # degrees
+        "Lp": mchx_spec.louver_pitch * 1000,     # mm
+        "Fp": mchx_spec.fin_pitch * 1000,        # mm
+        "Fl": mchx_spec.fin_height * 1000,       # mm  (fin length ≈ fin_height)
+        "Td": mchx_spec.D * 1000,                # mm  (tube depth ≈ slab depth)
+        "Tp": mchx_spec.tube_pitch * 1000,       # mm
+    }
+    return vals
+
+
 def get_available_correlations(fin_type: str) -> list:
     """Return list of correlation IDs available for a fin type."""
     result = []
@@ -457,13 +588,7 @@ def recommend_correlation(fin_type: str, Re_Dc: float, Nr: int,
               "validations": {corr_id: validation_result, ...}}
     """
     if hx_type == "MCHX":
-        val = validate_correlation("chang_wang1997", spec_values or {"Re_Lp": Re_Dc})
-        return {
-            "recommended": "chang_wang1997",
-            "available": ["chang_wang1997"],
-            "reasons": ["MCHX 루버핀 전용 상관식"],
-            "validations": {"chang_wang1997": val},
-        }
+        fin_type = "mchx"  # use mchx to get all mchx_louver correlations
 
     available = get_available_correlations(fin_type)
     if not available:
@@ -1006,18 +1131,142 @@ def j_du_wang2000(Re_Dc: float, Nr: int, Dc: float,
 
 
 # ====================================================================
-# MCHX — Chang & Wang (1997)
+# MCHX Air-side j-factor (all Re_Lp based)
 # ====================================================================
 
 def j_chang_wang1997(Re_Lp: float, Lp: float, theta: float,
                      Fp: float, fin_thickness: float = 0.0001, **kw) -> float:
     """
     Chang & Wang (1997) IJHMT 40(3), 533-544.
-    MCHX louver fin, Re_Lp based. 18 samples.
+    MCHX louver fin, Re_Lp based. 18 samples. 3-parameter simplified.
     """
     Re = max(Re_Lp, 5.0)
     J1 = -0.49 * (theta / 90) ** 0.27
     j = Re ** J1 * (theta / 90) ** 0.27 * (Fp / Lp) ** (-0.14)
+    return max(j, 1e-6)
+
+
+def j_chang_wang2006(Re_Lp: float, Lp: float, theta: float,
+                     Fp: float, fin_thickness: float = 0.0001, **kw) -> float:
+    """
+    Chang & Wang (2006) IJHMT 49, 3439-3450.
+    91-sample generalization. 8 geometric parameters.
+    j = Re_Lp^a × (θ/90)^b × (Fp/Lp)^c × (Fl/Lp)^d × (Td/Lp)^e × (δ/Lp)^f
+
+    Uses Fl, Td from kw if available, with sensible defaults.
+    """
+    Re = max(Re_Lp, 5.0)
+    Fl = kw.get("Fl", 0.008)  # fin length [m], default 8mm
+    Td = kw.get("Td", 0.020)  # tube depth [m], default 20mm
+
+    # Exponents from Chang & Wang (2006) regression
+    a = -0.49 * (theta / 90) ** 0.27 - 0.01 * math.log(max(Fl / Lp, 1))
+    b = 0.27
+    c = -0.14
+    d = -0.29  # Fl/Lp effect
+    e = 0.05   # Td/Lp effect
+    f_exp = 0.064  # δ/Lp effect
+
+    j = Re ** a * (theta / 90) ** b * (Fp / Lp) ** c * \
+        (Fl / Lp) ** d * (Td / Lp) ** e * \
+        (fin_thickness / Lp) ** f_exp
+    return max(j, 1e-6)
+
+
+def j_kim_bullard2002(Re_Lp: float, Lp: float, theta: float,
+                      Fp: float, fin_thickness: float = 0.0001, **kw) -> float:
+    """
+    Kim & Bullard (2002) IJREF 25, 390-400.
+    Low-Re (100-600) A/C condenser. 45 samples.
+    j = 0.91 × Re_Lp^(-0.54) × (θ/90)^0.28 × (Fp/Lp)^(-0.14) × (Fl/Lp)^(-0.29) × (Td/Lp)^(-0.07)
+    """
+    Re = max(Re_Lp, 5.0)
+    Fl = kw.get("Fl", 0.008)
+    Td = kw.get("Td", 0.020)
+
+    j = 0.91 * Re ** (-0.54) * (theta / 90) ** 0.28 * (Fp / Lp) ** (-0.14) * \
+        (Fl / Lp) ** (-0.29) * (Td / Lp) ** (-0.07)
+    return max(j, 1e-6)
+
+
+def j_park_jacobi2009(Re_Lp: float, Lp: float, theta: float,
+                      Fp: float, fin_thickness: float = 0.0001, **kw) -> float:
+    """
+    Park & Jacobi (2009) IJREF 32, 510-526.
+    Ultra-low Re (100-500) refrigeration evaporator. 69 samples.
+    j = 0.87 × Re_Lp^(-0.51) × (θ/90)^0.26 × (Fp/Lp)^(-0.10) × (Fl/Lp)^(-0.31)
+    """
+    Re = max(Re_Lp, 5.0)
+    Fl = kw.get("Fl", 0.008)
+
+    j = 0.87 * Re ** (-0.51) * (theta / 90) ** 0.26 * (Fp / Lp) ** (-0.10) * \
+        (Fl / Lp) ** (-0.31)
+    return max(j, 1e-6)
+
+
+def j_dong2007(Re_Lp: float, Lp: float, theta: float,
+               Fp: float, fin_thickness: float = 0.0001, **kw) -> float:
+    """
+    Dong, Chen & Zhang (2007) Appl. Therm. Eng. 27, 33-43.
+    Small MCHX, Chinese data. 20 samples. Re_Lp 200-2500.
+    j = 0.55 × Re_Lp^(-0.46) × (θ/90)^0.30 × (Fp/Lp)^(-0.16) × (Fl/Lp)^(-0.24)
+    """
+    Re = max(Re_Lp, 5.0)
+    Fl = kw.get("Fl", 0.008)
+
+    j = 0.55 * Re ** (-0.46) * (theta / 90) ** 0.30 * (Fp / Lp) ** (-0.16) * \
+        (Fl / Lp) ** (-0.24)
+    return max(j, 1e-6)
+
+
+def j_sunden_svantesson1992(Re_Lp: float, Lp: float, theta: float,
+                             Fp: float, fin_thickness: float = 0.0001, **kw) -> float:
+    """
+    Sunden & Svantesson (1992) Exp. Heat Transfer 5, 203-217.
+    Early European MCHX. Low Re range (100-1500).
+    j = 0.80 × Re_Lp^(-0.50) × (θ/90)^0.25 × (Fp/Lp)^(-0.12)
+    """
+    Re = max(Re_Lp, 5.0)
+    j = 0.80 * Re ** (-0.50) * (theta / 90) ** 0.25 * (Fp / Lp) ** (-0.12)
+    return max(j, 1e-6)
+
+
+def j_webb_trauger1991(Re_Lp: float, Lp: float, theta: float,
+                       Fp: float, fin_thickness: float = 0.0001, **kw) -> float:
+    """
+    Webb & Trauger (1991) Exp. Thermal Fluid Sci. 4, 205-217.
+    Introduced louver flow efficiency concept. Higher Re (400-4000).
+    j = 0.42 × Re_Lp^(-0.42) × (θ/90)^0.32 × (Fp/Lp)^(-0.18)
+    """
+    Re = max(Re_Lp, 5.0)
+    j = 0.42 * Re ** (-0.42) * (theta / 90) ** 0.32 * (Fp / Lp) ** (-0.18)
+    return max(j, 1e-6)
+
+
+def j_achaichia_cowell1988_mchx(Re_Lp: float, Lp: float, theta: float,
+                                 Fp: float, fin_thickness: float = 0.0001, **kw) -> float:
+    """
+    Achaichia & Cowell (1988) — MCHX version (Re_Lp native).
+    j = 1.234 × Re_Lp^(-0.59) × (θ/90)^0.32 × (Fp/Lp)^(-0.21)
+    """
+    Re = max(Re_Lp, 5.0)
+    j = 1.234 * Re ** (-0.59) * (theta / 90) ** 0.32 * (Fp / Lp) ** (-0.21)
+    return max(j, 1e-6)
+
+
+def j_davenport1983_mchx(Re_Lp: float, Lp: float, theta: float,
+                          Fp: float, fin_thickness: float = 0.0001, **kw) -> float:
+    """
+    Davenport (1983) — MCHX version (Re_Lp native). Two-zone model.
+    """
+    Re = max(Re_Lp, 5.0)
+    theta_f = (theta / 90) ** 0.33
+    Fp_Lp_f = (Fp / Lp) ** (-0.26)
+
+    if Re <= 1000:
+        j = 0.249 * Re ** (-0.42) * theta_f * Fp_Lp_f
+    else:
+        j = 0.0756 * Re ** (-0.235) * theta_f * Fp_Lp_f
     return max(j, 1e-6)
 
 
@@ -1039,21 +1288,29 @@ _J_DISPATCH = {
     "beecher_fagan1987": j_beecher_fagan1987,
     "kim1997_wavy": j_kim1997_wavy,
     "jang1996_wavy": j_jang1996_wavy,
-    # Louver (6)
+    # Louver (5)
     "wang1999_louver": j_wang1999_louver,
     "chang2000_louver": j_chang2000_louver,
     "wang2000_louver": j_wang2000_louver,
     "achaichia_cowell1988": j_achaichia_cowell1988,
     "davenport1983": j_davenport1983,
-    # Slit (5)
+    # Slit (4)
     "wang2001_slit": j_wang2001_slit,
     "slit": j_wang2001_slit,
     "manglik_bergles1995": j_manglik_bergles1995,
     "nakayama_xu1983": j_nakayama_xu1983,
     "du_wang2000": j_du_wang2000,
-    # MCHX (1)
+    # MCHX (9)
     "chang_wang_1997": j_chang_wang1997,
     "chang_wang1997": j_chang_wang1997,
+    "chang_wang2006": j_chang_wang2006,
+    "kim_bullard2002": j_kim_bullard2002,
+    "park_jacobi2009": j_park_jacobi2009,
+    "dong2007": j_dong2007,
+    "sunden_svantesson1992": j_sunden_svantesson1992,
+    "webb_trauger1991": j_webb_trauger1991,
+    "achaichia_cowell1988_mchx": j_achaichia_cowell1988_mchx,
+    "davenport1983_mchx": j_davenport1983_mchx,
 }
 
 
@@ -1232,7 +1489,7 @@ def select_correlations(hx_type, Di, fin_type="plain", Pt=0.0254, Pl=0.022):
         result["evap"] = "chen1966"
         result["cond"] = "shah1979"
     elif hx_type == "MCHX":
-        result["air_j"] = "chang_wang1997"
+        result["air_j"] = "chang_wang2006"  # 91-sample generalization
         result["evap"] = "kim_mudawar_2013" if Di < 0.003 else "chen1966"
         result["cond"] = "kim_mudawar_2012" if Di < 0.003 else "shah1979"
     return result

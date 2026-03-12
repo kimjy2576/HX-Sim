@@ -16,7 +16,7 @@ from models.properties import RefrigerantProperties
 from models.correlations import (
     AIRSIDE_CORRELATIONS, get_available_correlations,
     recommend_correlation, select_correlations,
-    validate_correlation, build_spec_values,
+    validate_correlation, build_spec_values, build_mchx_spec_values,
 )
 
 app = FastAPI(
@@ -326,12 +326,14 @@ def simulate(req: SimRequest):
             Nr = ft_resolved.Nr
             spec_vals = build_spec_values(ft_resolved, geo_temp, Re_Dc_val)
         else:
-            geo_temp = MCHXGeo.from_spec(mchx or MCHXSpec())
-            Dc = geo_temp.Dh_air
-            Re_Dc_val = 500
+            mchx_resolved = mchx or MCHXSpec()
+            geo_temp = MCHXGeo.from_spec(mchx_resolved)
+            rho_air = air_props.rho_air(T_air_K, 0.01)
+            G_air_mchx = rho_air * V_air_resolved / geo_temp.sigma if geo_temp.sigma > 0 else 5.0
+            Re_Dc_val = G_air_mchx * mchx_resolved.louver_pitch / mu_air  # Re_Lp
             fin_type = "mchx"
-            Nr = (mchx or MCHXSpec()).n_slabs
-            spec_vals = {"Re_Lp": Re_Dc_val}
+            Nr = mchx_resolved.n_slabs
+            spec_vals = build_mchx_spec_values(mchx_resolved, geo_temp, Re_Dc_val)
 
         rec = recommend_correlation(fin_type, Re_Dc_val, Nr, req.hx_type, spec_vals)
 
