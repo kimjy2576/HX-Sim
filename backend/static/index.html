@@ -148,7 +148,7 @@ function App() {
   const [hxType,setHxType]=useState("FT");
   const [mode,setMode]=useState("evap");
   const [airIn,setAirIn]=useState({T:35,RH:0.5,flowMode:"velocity",V:2.0,CMM:null});
-  const [refIn,setRefIn]=useState({fluid:"R410A",stateMode:"T",T_sat:7,P_sat:null,m_ref:0.02,twoPhase:true,x_in:0.2,T_ref_in:null});
+  const [refIn,setRefIn]=useState({fluid:"R410A",stateMode:"T",T_sat:7,P_sat:null,m_ref:0.02,massUnit:"kg/s",twoPhase:true,x_in:0.2,T_ref_in:null});
   const [flow,setFlow]=useState("counter");
   const [ftSpec,setFtSpec]=useState({...DEFAULT_FT});
   const [mchxSpec,setMchxSpec]=useState({...DEFAULT_MCHX});
@@ -173,7 +173,7 @@ function App() {
     try {
       const body={hx_type:hxType,mode,T_air_in_C:airIn.T,RH_in:airIn.RH,
         air_flow_mode:airIn.flowMode,
-        fluid:refIn.fluid,m_ref:refIn.m_ref,flow_arrangement:flow,
+        fluid:refIn.fluid,m_ref:refIn.massUnit==="kg/hr"?refIn.m_ref/3600:refIn.m_ref,flow_arrangement:flow,
         two_phase_inlet:refIn.twoPhase,x_in:refIn.x_in};
       if(airIn.flowMode==="velocity") body.V_air=airIn.V; else body.CMM=airIn.CMM||18;
       if(airCorr.mode==="manual"&&airCorr.selected) body.air_j_corr=airCorr.selected;
@@ -290,7 +290,21 @@ function App() {
                   `T_sat = ${result.T_sat_C?.toFixed(2)} °C`}
               </div>
             )}
-            <Field label="ṁ_ref" unit="kg/s" value={refIn.m_ref} onChange={v=>uR("m_ref",v)} step={0.001}/>
+            <div style={{display:"flex",gap:4,marginBottom:4,marginTop:4}}>
+              {["kg/s","kg/hr"].map(u=>(
+                <button key={u} onClick={()=>{
+                  const old=refIn.massUnit,v=refIn.m_ref;
+                  const conv=old==="kg/s"&&u==="kg/hr"?v*3600:old==="kg/hr"&&u==="kg/s"?v/3600:v;
+                  uR("massUnit",u);uR("m_ref",parseFloat(conv.toPrecision(4)));
+                }} style={{
+                  flex:1,padding:"4px 0",borderRadius:6,border:"none",cursor:"pointer",
+                  fontWeight:700,fontSize:10,fontFamily:"inherit",
+                  background:refIn.massUnit===u?C.success:C.bg,color:refIn.massUnit===u?C.bg:C.dim}}>
+                  {u}</button>
+              ))}
+            </div>
+            <Field label="ṁ_ref" unit={refIn.massUnit} value={refIn.m_ref} onChange={v=>uR("m_ref",v)}
+              step={refIn.massUnit==="kg/s"?0.001:1}/>
             {/* Two-phase checkbox */}
             <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6,marginBottom:6}}>
               <input type="checkbox" id="tp" checked={refIn.twoPhase}
