@@ -85,9 +85,14 @@ class SimRequest(BaseModel):
 
     # Refrigerant
     fluid: str = "R410A"
-    T_sat_C: float = Field(7.0, description="Saturation temperature [°C]")
+    T_sat_C: Optional[float] = Field(None, description="Saturation temperature [°C] (either T or P)")
+    P_sat_kPa: Optional[float] = Field(None, description="Saturation pressure [kPa] (either T or P)")
     m_ref: float = Field(0.02, description="Mass flow rate [kg/s]")
-    x_in: float = Field(0.2, description="Inlet quality")
+
+    # Two-phase inlet: if True, x_in is used; if False, T_ref_in_C + P_ref_kPa define single-phase state
+    two_phase_inlet: bool = Field(True, description="Is inlet two-phase?")
+    x_in: float = Field(0.2, description="Inlet quality (used when two_phase_inlet=True)")
+    T_ref_in_C: Optional[float] = Field(None, description="Inlet ref temp [°C] (single-phase)")
 
     # Flow
     flow_arrangement: Literal["counter", "parallel"] = "counter"
@@ -126,6 +131,8 @@ class SimResponse(BaseModel):
     x_ref_out: float
     T_ref_out_C: float
     dp_air: float
+    T_sat_C: float = 0.0
+    P_sat_kPa: float = 0.0
     row_Q: List[float]
     correlations_used: Dict
     segments: List[SegmentOut]
@@ -174,7 +181,43 @@ def simulate(req: SimRequest):
     try:
         # Convert °C → K
         T_air_K = req.T_air_in_C + 273.15
-        T_sat_K = req.T_sat_C + 273.15
+
+        # --- Resolve refrigerant state: T_sat ↔ P_sat ---
+        ref_props = RefrigerantProperties(req.fluid)
+
+        if req.T_sat_C is not None and req.P_sat_kPa is not None:
+            # Both given — use T_sat as primary, P is informational
+            T_sat_K = req.T_sat_C + 273.15
+            P_sat = ref_props.P_sat(T_sat_K)
+        elif req.T_sat_C is not None:
+            T_sat_K = req.T_sat_C + 273.15
+            P_sat = ref_props.P_sat(T_sat_K)
+        elif req.P_sat_kPa is not None:
+            P_sat = req.P_sat_kPa * 1000.0  # kPa → Pa
+            T_sat_K = ref_props.T_sat(P_sat)
+        else:
+            # Default fallback
+            T_sat_K = 280.15  # 7°C
+            P_sat = ref_props.P_sat(T_sat_K)
+
+        T_sat_C_resolved = T_sat_K - 273.15
+        P_sat_kPa_resolved = P_sat / 1000.0
+
+        # --- Determine inlet quality ---
+        if req.two_phase_inlet:
+            x_in = req.x_in
+        else:
+            # Single-phase: determine x from temperature relative to T_sat
+            if req.T_ref_in_C is not None:
+                T_ref_in_K = req.T_ref_in_C + 273.15
+                if req.mode == "evap":
+                    # Subcooled liquid entering evaporator
+                    x_in = 0.0
+                else:
+                    # Superheated vapor entering condenser
+                    x_in = 1.0
+            else:
+                x_in = 0.2 if req.mode == "evap" else 0.95
 
         # Build FT spec
         ft = None
@@ -217,7 +260,7 @@ def simulate(req: SimRequest):
             fluid=req.fluid,
             T_sat=T_sat_K,
             m_ref=req.m_ref,
-            x_in=req.x_in,
+            x_in=x_in,
             flow_arrangement=req.flow_arrangement,
             ft_spec=ft,
             mchx_spec=mchx,
@@ -257,6 +300,8 @@ def simulate(req: SimRequest):
             x_ref_out=round(result.x_ref_out, 4),
             T_ref_out_C=round(result.T_ref_out - 273.15, 2),
             dp_air=round(result.dp_air, 1),
+            T_sat_C=round(T_sat_C_resolved, 2),
+            P_sat_kPa=round(P_sat_kPa_resolved, 1),
             row_Q=[round(q, 1) for q in result.row_Q],
             correlations_used=result.correlations_used,
             segments=seg_out,

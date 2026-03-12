@@ -144,7 +144,7 @@ function App() {
   const [hxType,setHxType]=useState("FT");
   const [mode,setMode]=useState("evap");
   const [airIn,setAirIn]=useState({T:35,RH:0.5,V:2.0});
-  const [refIn,setRefIn]=useState({fluid:"R410A",T_sat:7,m_ref:0.02,x_in:0.2});
+  const [refIn,setRefIn]=useState({fluid:"R410A",stateMode:"T",T_sat:7,P_sat:null,m_ref:0.02,twoPhase:true,x_in:0.2,T_ref_in:null});
   const [flow,setFlow]=useState("counter");
   const [ftSpec,setFtSpec]=useState({...DEFAULT_FT});
   const [mchxSpec,setMchxSpec]=useState({...DEFAULT_MCHX});
@@ -167,7 +167,10 @@ function App() {
     setLoading(true);setError("");
     try {
       const body={hx_type:hxType,mode,T_air_in_C:airIn.T,RH_in:airIn.RH,V_air:airIn.V,
-        fluid:refIn.fluid,T_sat_C:refIn.T_sat,m_ref:refIn.m_ref,x_in:refIn.x_in,flow_arrangement:flow};
+        fluid:refIn.fluid,m_ref:refIn.m_ref,flow_arrangement:flow,
+        two_phase_inlet:refIn.twoPhase,x_in:refIn.x_in};
+      if(refIn.stateMode==="T") body.T_sat_C=refIn.T_sat; else body.P_sat_kPa=refIn.P_sat;
+      if(!refIn.twoPhase&&refIn.T_ref_in!==null) body.T_ref_in_C=refIn.T_ref_in;
       if(hxType==="FT") body.ft_spec=ftSpec; else body.mchx_spec=mchxSpec;
       const res=await fetch(`${API_URL}/simulate`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       if(!res.ok){const e=await res.json();throw new Error(e.detail||"Failed");}
@@ -237,9 +240,43 @@ function App() {
 
           <InputGroup label="🧊 Refrigerant">
             <Field label="Fluid" options={REFRIGERANTS} value={refIn.fluid} onChange={v=>uR("fluid",v)}/>
-            <Field label="T_sat" unit="°C" value={refIn.T_sat} onChange={v=>uR("T_sat",v)}/>
+            {/* T / P toggle */}
+            <div style={{display:"flex",gap:4,marginBottom:8,marginTop:4}}>
+              {["T","P"].map(m=>(
+                <button key={m} onClick={()=>uR("stateMode",m)} style={{
+                  flex:1,padding:"5px 0",borderRadius:6,border:"none",cursor:"pointer",
+                  fontWeight:700,fontSize:11,fontFamily:"inherit",
+                  background:refIn.stateMode===m?C.warn:C.bg,color:refIn.stateMode===m?C.bg:C.dim}}>
+                  {m==="T"?"🌡 Temperature":"📊 Pressure"}</button>
+              ))}
+            </div>
+            {refIn.stateMode==="T" ?
+              <Field label="T_sat" unit="°C" value={refIn.T_sat} onChange={v=>uR("T_sat",v)}/> :
+              <Field label="P_sat" unit="kPa" value={refIn.P_sat||1000} onChange={v=>uR("P_sat",v)}/>
+            }
+            {/* Show resolved counterpart from last result */}
+            {result&&(
+              <div style={{fontSize:10,color:C.dim,marginBottom:6,paddingLeft:4}}>
+                → {refIn.stateMode==="T" ?
+                  `P_sat = ${result.P_sat_kPa?.toFixed(1)} kPa` :
+                  `T_sat = ${result.T_sat_C?.toFixed(2)} °C`}
+              </div>
+            )}
             <Field label="ṁ_ref" unit="kg/s" value={refIn.m_ref} onChange={v=>uR("m_ref",v)} step={0.001}/>
-            <Field label="x_in" unit="-" value={refIn.x_in} onChange={v=>uR("x_in",v)} step={0.05}/>
+            {/* Two-phase checkbox */}
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6,marginBottom:6}}>
+              <input type="checkbox" id="tp" checked={refIn.twoPhase}
+                onChange={e=>uR("twoPhase",e.target.checked)}
+                style={{width:16,height:16,accentColor:C.accent,cursor:"pointer"}}/>
+              <label htmlFor="tp" style={{fontSize:12,color:refIn.twoPhase?C.text:C.dim,cursor:"pointer"}}>
+                2상 입구 (Two-Phase Inlet)
+              </label>
+            </div>
+            {refIn.twoPhase ?
+              <Field label="x_in" unit="-" value={refIn.x_in} onChange={v=>uR("x_in",v)} step={0.05}/> :
+              <Field label="T_ref,in" unit="°C" value={refIn.T_ref_in||refIn.T_sat-5}
+                onChange={v=>uR("T_ref_in",v)}/>
+            }
           </InputGroup>
 
           {hxType==="FT"?(
@@ -318,6 +355,10 @@ function App() {
                 <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
                   <Metric label="T_air,out" value={result.T_air_out_C.toFixed(1)} unit="°C" color={C.success}/>
                   <Metric label="x_ref,out" value={result.x_ref_out.toFixed(3)} unit="-" color={C.accent3}/>
+                  <Metric label="T_sat" value={result.T_sat_C.toFixed(1)} unit="°C" color={C.warn}/>
+                  <Metric label="P_sat" value={result.P_sat_kPa.toFixed(0)} unit="kPa" color={C.warn}/>
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
                   <Metric label="ΔP_air" value={result.dp_air.toFixed(1)} unit="Pa" color={C.dim}/>
                   <Metric label="RH_out" value={(result.RH_out*100).toFixed(1)} unit="%" color={C.accent2}/>
                 </div>
