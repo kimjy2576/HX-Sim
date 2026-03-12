@@ -360,16 +360,47 @@ def recommend_correlation(fin_type: str, Re_Dc: float, Nr: int,
         for w in rec_val["warnings"][:2]:
             reasons.append(f"  {w['msg']}")
 
-    # Add notes about other options
     for cid in ranked[1:]:
         v = validations[cid]
         m = AIRSIDE_CORRELATIONS.get(cid, {})
         if v["valid"] and not rec_val["valid"]:
             reasons.append(f"💡 {m.get('name',cid)}: 기하 범위 모두 만족 (대안)")
 
+    # Build ranked list with detail for manual mode
+    ranked_list = []
+    for i, cid in enumerate(ranked):
+        v = validations[cid]
+        m = AIRSIDE_CORRELATIONS.get(cid, {})
+        n_err = len([w for w in v["warnings"] if w["severity"] == "error"])
+        n_warn = len(v["warnings"])
+        Re_lo, Re_hi = m.get("Re_range", [0, 99999])
+        re_ok = Re_lo <= Re_Dc <= Re_hi
+
+        if n_err > 0:
+            status = "error"
+        elif n_warn > 0:
+            status = "warning"
+        else:
+            status = "valid"
+
+        ranked_list.append({
+            "id": cid,
+            "rank": i + 1,
+            "name": m.get("name", cid),
+            "ref": m.get("ref", ""),
+            "samples": m.get("samples", 0),
+            "Re_range": m.get("Re_range", [0, 99999]),
+            "Re_ok": re_ok,
+            "status": status,  # "valid" | "warning" | "error"
+            "in_range": f"{v['in_range_count']}/{v['total_checked']}",
+            "warnings": v["warnings"],
+            "note": m.get("note", ""),
+        })
+
     return {
         "recommended": recommended,
         "available": available,
+        "ranked": ranked_list,
         "reasons": reasons,
         "validations": validations,
     }

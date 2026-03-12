@@ -42,29 +42,6 @@ const DEFAULT_MCHX = {
 };
 const REFRIGERANTS = ["R410A","R134a","R32","R290","R1234yf","R22","R407C","R404A","R513A","R454C"];
 
-const CORR_OPTIONS = {
-  plain: [
-    {id:"auto",label:"⚡ Auto (추천)"},
-    {id:"wang2000_plain",label:"Wang(2000) — 74샘플, Re 300~15k"},
-    {id:"gray_webb1986",label:"Gray&Webb(1986) — Re 500~25k"},
-  ],
-  wavy: [
-    {id:"auto",label:"⚡ Auto (추천)"},
-    {id:"wang2002_wavy",label:"Wang(2002) — 49샘플, 무차원비 정리"},
-    {id:"wang1999_wavy",label:"Wang(1999) — 35샘플, Re 300~12k"},
-  ],
-  louver: [
-    {id:"auto",label:"⚡ Auto (추천)"},
-    {id:"chang2000_louver",label:"Chang(2000) — 91샘플, 가장 완전"},
-    {id:"wang1999_louver",label:"Wang(1999) — 35샘플, Re 300~10k"},
-  ],
-  slit: [
-    {id:"auto",label:"⚡ Auto (추천)"},
-    {id:"wang2001_slit",label:"Wang(2001) — 20샘플, Re 500~15k"},
-    {id:"manglik_bergles1995",label:"Manglik&Bergles(1995) — OSF 범용"},
-  ],
-};
-
 const C = {
   bg:"#0a0e17",surface:"#111827",card:"#1a2233",border:"#2a3a52",
   accent:"#38bdf8",accent2:"#818cf8",accent3:"#f472b6",
@@ -175,7 +152,7 @@ function App() {
   const [flow,setFlow]=useState("counter");
   const [ftSpec,setFtSpec]=useState({...DEFAULT_FT});
   const [mchxSpec,setMchxSpec]=useState({...DEFAULT_MCHX});
-  const [airCorr,setAirCorr]=useState("auto");
+  const [airCorr,setAirCorr]=useState({mode:"auto",selected:null});
   const [result,setResult]=useState(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -199,7 +176,7 @@ function App() {
         fluid:refIn.fluid,m_ref:refIn.m_ref,flow_arrangement:flow,
         two_phase_inlet:refIn.twoPhase,x_in:refIn.x_in};
       if(airIn.flowMode==="velocity") body.V_air=airIn.V; else body.CMM=airIn.CMM||18;
-      if(airCorr!=="auto") body.air_j_corr=airCorr;
+      if(airCorr.mode==="manual"&&airCorr.selected) body.air_j_corr=airCorr.selected;
       if(refIn.stateMode==="T") body.T_sat_C=refIn.T_sat; else body.P_sat_kPa=refIn.P_sat;
       if(!refIn.twoPhase&&refIn.T_ref_in!==null) body.T_ref_in_C=refIn.T_ref_in;
       if(hxType==="FT") body.ft_spec=ftSpec; else body.mchx_spec=mchxSpec;
@@ -342,71 +319,93 @@ function App() {
               <Field label="Nt" unit="tubes" value={ftSpec.Nt} onChange={v=>uF("Nt",parseInt(v)||1)}/>
               <Field label="FPI" unit="fins/in" value={ftSpec.FPI} onChange={v=>uF("FPI",v)}/>
               <Field label="Fin" options={["plain","wavy","louver","slit"]} value={ftSpec.fin_type}
-                onChange={v=>{uF("fin_type",v);setAirCorr("auto");}}/>
-              {/* Correlation selector */}
-              <div style={{marginBottom:8}}>
+                onChange={v=>{uF("fin_type",v);setAirCorr({mode:"auto",selected:null});}}/>
+              {/* Correlation Mode: Auto / Manual */}
+              <div style={{marginBottom:6}}>
                 <div style={{fontSize:10,color:C.dim,marginBottom:3}}>Air-side j Correlation</div>
-                <select value={airCorr} onChange={e=>setAirCorr(e.target.value)} style={{
-                  width:"100%",background:C.bg,color:C.text,border:`1px solid ${C.border}`,
-                  borderRadius:6,padding:"6px 8px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                  {(CORR_OPTIONS[ftSpec.fin_type]||CORR_OPTIONS.plain).map(o=>
-                    <option key={o.id} value={o.id}>{o.label}</option>
-                  )}
-                </select>
+                <div style={{display:"flex",gap:4}}>
+                  {["auto","manual"].map(m=>(
+                    <button key={m} onClick={()=>setAirCorr(p=>({...p,mode:m,selected:m==="auto"?null:p.selected}))} style={{
+                      flex:1,padding:"5px 0",borderRadius:6,border:"none",cursor:"pointer",
+                      fontWeight:700,fontSize:10,fontFamily:"inherit",
+                      background:airCorr.mode===m?(m==="auto"?C.accent:C.accent2):C.bg,
+                      color:airCorr.mode===m?C.bg:C.dim}}>
+                      {m==="auto"?"⚡ Auto":"🔧 Manual"}</button>
+                  ))}
+                </div>
               </div>
-              {/* Recommendation + Validation from last result */}
-              {result?.correlation_recommendation?.recommended&&(()=>{
+              {/* Manual mode: ranked correlation list */}
+              {airCorr.mode==="manual"&&(()=>{
+                const ranked = result?.correlation_recommendation?.ranked;
+                if(!ranked||ranked.length===0) return (
+                  <div style={{fontSize:10,color:C.dim,padding:"6px 8px",marginBottom:8,
+                    background:`${C.border}33`,borderRadius:6}}>
+                    시뮬레이션을 실행하면 추천순 상관식 목록이 표시됩니다
+                  </div>
+                );
+                return (
+                  <div style={{marginBottom:8}}>
+                    {ranked.map(r=>{
+                      const sel = airCorr.selected===r.id;
+                      const clr = r.status==="error"?C.err:r.status==="warning"?C.warn:C.success;
+                      const icon = r.status==="error"?"🚫":r.status==="warning"?"⚠️":"✅";
+                      return (
+                        <div key={r.id} onClick={()=>setAirCorr(p=>({...p,selected:r.id}))}
+                          style={{padding:"6px 8px",marginBottom:3,borderRadius:6,cursor:"pointer",
+                            border:`1px solid ${sel?clr:C.border}`,
+                            background:sel?`${clr}15`:C.bg,
+                            transition:"all 0.15s"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{fontSize:10}}>{icon}</span>
+                            <span style={{fontSize:11,fontWeight:sel?700:400,color:sel?C.text:C.dim,flex:1}}>
+                              {r.name}
+                            </span>
+                            <span style={{fontSize:9,color:clr}}>{r.in_range}</span>
+                          </div>
+                          <div style={{fontSize:9,color:C.dim,marginTop:2}}>
+                            {r.ref} · {r.samples>0?`${r.samples}샘플`:"범용"} · Re {r.Re_range[0]}~{r.Re_range[1]}
+                            {!r.Re_ok&&<span style={{color:C.warn}}> (Re 범위 밖)</span>}
+                          </div>
+                          {sel&&r.warnings.length>0&&(
+                            <div style={{marginTop:3,paddingTop:3,borderTop:`1px solid ${clr}22`}}>
+                              {r.warnings.map((w,i)=>(
+                                <div key={i} style={{fontSize:9,color:w.severity==="error"?C.err:C.warn}}>
+                                  {w.severity==="error"?"🚫":"⚠️"} {w.param}: {w.value} (범위 {w.range})
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+              {/* Auto mode: show selection reason after simulation */}
+              {airCorr.mode==="auto"&&result?.correlation_recommendation&&(()=>{
                 const rec = result.correlation_recommendation;
                 const usedCorr = result.correlations_used?.air_j;
-                const usedVal = rec.user_validation || rec.validations?.[usedCorr] || rec.validations?.[rec.recommended];
-                const warnings = usedVal?.warnings || [];
-                const hasErr = warnings.some(w=>w.severity==="error");
-                const hasWarn = warnings.length > 0;
-                const borderColor = hasErr ? C.err : hasWarn ? C.warn : C.success;
+                const usedInfo = rec.ranked?.find(r=>r.id===usedCorr);
+                const clr = usedInfo?.status==="error"?C.err:usedInfo?.status==="warning"?C.warn:C.success;
                 return (
                   <div style={{fontSize:10,padding:"6px 8px",marginBottom:8,borderRadius:6,
-                    background:`${borderColor}11`,border:`1px solid ${borderColor}44`}}>
+                    background:`${clr}11`,border:`1px solid ${clr}33`}}>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-                      <span style={{color:C.accent,fontWeight:700}}>⚡ 추천:</span>
-                      <span style={{color:C.text}}>{rec.recommended}</span>
-                      <span style={{color:C.dim,fontSize:9}}>(Re_Dc={result.Re_Dc})</span>
+                      <span style={{fontWeight:700,color:C.accent}}>⚡ 자동 선택:</span>
+                      <span style={{color:C.text,fontWeight:600}}>{usedInfo?.name||usedCorr}</span>
+                      <span style={{fontSize:9,color:clr}}>({usedInfo?.in_range||"?"})</span>
                     </div>
+                    <div style={{fontSize:9,color:C.dim,marginBottom:2}}>Re_Dc = {result.Re_Dc}</div>
                     {rec.reasons?.map((r,i)=>
                       <div key={i} style={{color:C.dim,fontSize:9,marginTop:1}}>• {r}</div>
                     )}
-                    {/* Validation status for used correlation */}
-                    {usedVal && (
-                      <div style={{marginTop:5,paddingTop:5,borderTop:`1px solid ${borderColor}22`}}>
-                        <div style={{fontWeight:700,color:borderColor,fontSize:9,marginBottom:2}}>
-                          {hasErr ? "🚫 범위 초과 (결과 신뢰도 낮음)" :
-                           hasWarn ? "⚠️ 일부 범위 초과" : "✅ 기하 조건 모두 유효"}
-                          <span style={{color:C.dim,fontWeight:400}}> — {usedVal.in_range_count}/{usedVal.total_checked} 항목 만족</span>
-                        </div>
-                        {warnings.map((w,i)=>(
-                          <div key={i} style={{fontSize:9,marginTop:2,
-                            color:w.severity==="error"?C.err:C.warn}}>
+                    {usedInfo?.warnings?.length>0&&(
+                      <div style={{marginTop:4,paddingTop:4,borderTop:`1px solid ${clr}22`}}>
+                        {usedInfo.warnings.map((w,i)=>(
+                          <div key={i} style={{fontSize:9,color:w.severity==="error"?C.err:C.warn}}>
                             {w.severity==="error"?"🚫":"⚠️"} {w.param}: {w.value} (범위 {w.range})
                           </div>
                         ))}
-                      </div>
-                    )}
-                    {/* Show all available correlations' validity */}
-                    {rec.validations && Object.keys(rec.validations).length > 1 && (
-                      <div style={{marginTop:5,paddingTop:5,borderTop:`1px solid ${borderColor}22`}}>
-                        <div style={{fontSize:9,color:C.dim,fontWeight:700,marginBottom:2}}>가용 상관식 유효성:</div>
-                        {rec.available?.map(cid=>{
-                          const v = rec.validations[cid];
-                          const errs = v?.warnings?.filter(w=>w.severity==="error")?.length||0;
-                          const warns = v?.warnings?.length||0;
-                          const icon = errs>0?"🚫":warns>0?"⚠️":"✅";
-                          const clr = errs>0?C.err:warns>0?C.warn:C.success;
-                          return (
-                            <div key={cid} style={{fontSize:9,color:clr,marginTop:1}}>
-                              {icon} {cid} ({v?.in_range_count}/{v?.total_checked})
-                              {warns>0&&<span style={{color:C.dim}}> — {warns}개 범위 초과</span>}
-                            </div>
-                          );
-                        })}
                       </div>
                     )}
                   </div>
@@ -507,13 +506,43 @@ function App() {
                   <Metric label="RH_out" value={(result.RH_out*100).toFixed(1)} unit="%" color={C.accent2}/>
                 </div>
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14,marginBottom:16}}>
-                  <div style={{fontSize:11,color:C.accent,fontWeight:700,marginBottom:8,letterSpacing:1}}>CORRELATIONS</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                  <div style={{fontSize:11,color:C.accent,fontWeight:700,marginBottom:8,letterSpacing:1}}>CORRELATIONS USED</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:8}}>
                     {Object.entries(result.correlations_used).map(([k,v])=>(
                       <span key={k} style={{background:C.bg,padding:"4px 10px",borderRadius:6,fontSize:11}}>
                         <span style={{color:C.dim}}>{k}:</span> {v}</span>
                     ))}
                   </div>
+                  {/* Air-side selection reasoning */}
+                  {(()=>{
+                    const rec = result.correlation_recommendation;
+                    if(!rec) return null;
+                    const usedCorr = result.correlations_used?.air_j;
+                    const info = rec.ranked?.find(r=>r.id===usedCorr);
+                    const clr = info?.status==="error"?C.err:info?.status==="warning"?C.warn:C.success;
+                    const isAuto = airCorr.mode==="auto";
+                    return (
+                      <div style={{padding:"8px 10px",borderRadius:6,background:`${clr}11`,border:`1px solid ${clr}22`}}>
+                        <div style={{fontSize:10,fontWeight:700,color:clr,marginBottom:4}}>
+                          {isAuto?"⚡ 자동 선택":"🔧 수동 선택"}: {info?.name||usedCorr}
+                          <span style={{fontWeight:400,color:C.dim}}> — {info?.in_range||"?"} 항목 유효, Re_Dc={result.Re_Dc}</span>
+                        </div>
+                        {isAuto&&rec.reasons?.map((r,i)=>
+                          <div key={i} style={{fontSize:9,color:C.dim,marginTop:1}}>• {r}</div>
+                        )}
+                        {!isAuto&&info?.warnings?.length>0&&(
+                          <div style={{marginTop:3}}>
+                            {info.warnings.map((w,i)=>
+                              <div key={i} style={{fontSize:9,color:w.severity==="error"?C.err:C.warn}}>
+                                {w.severity==="error"?"🚫":"⚠️"} {w.param}: {w.value} (범위 {w.range})
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {info?.note&&<div style={{fontSize:9,color:C.dim,marginTop:3,fontStyle:"italic"}}>{info.note}</div>}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}>
                   <div style={{fontSize:11,color:C.accent,fontWeight:700,marginBottom:6,letterSpacing:1}}>ROW Q DISTRIBUTION</div>
