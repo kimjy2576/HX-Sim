@@ -519,24 +519,64 @@ class HXSolver:
         return b
 
     def _compute_dp_air(self, G_air: float, T_in: float, T_out: float) -> float:
-        """Air-side pressure drop."""
+        """
+        Air-side pressure drop — Kays & London (1984) formulation.
+        ΔP = G²/(2ρᵢ) × [Kc + (1+σ²)(ρᵢ/ρₒ-1) + f×(A_t/A_c)×(ρᵢ/ρₘ) - Ke×(ρᵢ/ρₒ)]
+
+        Includes:
+        - Core friction with fin-type specific f-factor
+        - Entrance/exit contraction/expansion losses (Kc, Ke)
+        - Flow acceleration from density change
+        """
         inp = self.inp
-        mu = self.air.mu_air((T_in + T_out) / 2)
-        rho = self.air.rho_air((T_in + T_out) / 2, 0.01)
+        T_avg = (T_in + T_out) / 2
+        mu = self.air.mu_air(T_avg)
+        rho_in = self.air.rho_air(T_in, 0.01)
+        rho_out = self.air.rho_air(T_out, 0.01)
+        rho_m = (rho_in + rho_out) / 2
 
         if inp.hx_type == "FT":
             spec = inp.ft_spec
             Dc = self.geo.Dc
             Re_Dc = G_air * Dc / mu
+            sigma = self.geo.sigma
+
+            # Base f-factor (plain)
             f = f_factor_wang2000_plain(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
                                        spec.FPI, spec.fin_thickness)
+
+            # Enhanced fin f-factor correction
+            # Wang et al.: enhanced fins increase f by E_f factor
+            fin_f_multiplier = {
+                "plain": 1.0,
+                "wavy": 1.5,    # Wang(1999): wavy ~1.3-1.7× plain
+                "louver": 1.8,  # Wang(1999): louver ~1.5-2.0× plain
+                "slit": 1.6,    # Wang(2001): slit ~1.4-1.8× plain
+            }
+            f *= fin_f_multiplier.get(spec.fin_type, 1.0)
+
             A_ratio = self.geo.A_total / self.geo.A_c if self.geo.A_c > 0 else 10
+
+            # Kc, Ke from Kays & London (1984), approximation for tube banks
+            Kc = 0.42 * (1 - sigma ** 2)
+            Ke = (1 - sigma ** 2 - 0.4 * (1 - sigma ** 2) ** 1.25)
+            Ke = max(Ke, 0.0)
+
         else:
             spec = inp.mchx_spec
             Re_Lp = G_air * spec.louver_pitch / mu
             f = f_factor_chang_wang_1997(Re_Lp, spec.louver_pitch,
                                         spec.louver_angle, spec.fin_pitch)
+            sigma = self.geo.sigma
             A_ratio = self.geo.A_total / self.geo.A_c if self.geo.A_c > 0 else 10
+            Kc = 0.42 * (1 - sigma ** 2)
+            Ke = max((1 - sigma ** 2 - 0.4 * (1 - sigma ** 2) ** 1.25), 0.0)
 
-        dp = f * A_ratio * G_air ** 2 / (2 * rho)
-        return dp
+        # Kays & London full pressure drop
+        dp = G_air ** 2 / (2 * rho_in) * (
+            Kc +
+            (1 + sigma ** 2) * (rho_in / rho_out - 1) +
+            f * A_ratio * (rho_in / rho_m) -
+            Ke * (rho_in / rho_out)
+        )
+        return max(dp, 0.0)
