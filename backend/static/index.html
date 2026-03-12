@@ -669,7 +669,22 @@ function App() {
                 </div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
                   <Metric label="T_air,out" value={result.T_air_out_C.toFixed(1)} unit="°C" color={C.success}/>
+                  <Metric label="T_ref,out" value={result.T_ref_out_C.toFixed(1)} unit="°C" color={C.accent3}/>
                   <Metric label="x_ref,out" value={result.x_ref_out.toFixed(3)} unit="-" color={C.accent3}/>
+                  {(()=>{
+                    const dT = result.T_ref_out_C - result.T_sat_C;
+                    if(mode==="evap" && dT > 0.1)
+                      return <Metric label="과열도(SH)" value={dT.toFixed(1)} unit="K" color={C.err}/>;
+                    if(mode==="cond" && dT < -0.1)
+                      return <Metric label="과냉도(SC)" value={(-dT).toFixed(1)} unit="K" color={C.accent}/>;
+                    if(mode==="evap" && result.x_ref_out < 1.0)
+                      return <Metric label="상태" value="2상 출구" unit="" color={C.warn}/>;
+                    if(mode==="cond" && result.x_ref_out > 0.0)
+                      return <Metric label="상태" value="2상 출구" unit="" color={C.warn}/>;
+                    return null;
+                  })()}
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
                   <Metric label="T_sat" value={result.T_sat_C.toFixed(1)} unit="°C" color={C.warn}/>
                   <Metric label="P_sat" value={result.P_sat_kPa.toFixed(0)} unit="kPa" color={C.warn}/>
                 </div>
