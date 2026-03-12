@@ -1,0 +1,8 @@
+[build]
+dockerfilePath = "backend/Dockerfile"
+dockerContext = "backend"
+
+[deploy]
+healthcheckPath = "/api"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
