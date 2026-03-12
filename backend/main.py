@@ -81,7 +81,9 @@ class SimRequest(BaseModel):
     # Air
     T_air_in_C: float = Field(35.0, description="Air inlet temperature [°C]")
     RH_in: float = Field(0.50, ge=0, le=1, description="Relative humidity [-]")
-    V_air: float = Field(2.0, description="Face velocity [m/s]")
+    air_flow_mode: Literal["velocity", "CMM"] = "velocity"
+    V_air: Optional[float] = Field(None, description="Face velocity [m/s]")
+    CMM: Optional[float] = Field(None, description="Volumetric flow rate [m³/min]")
 
     # Refrigerant
     fluid: str = "R410A"
@@ -133,6 +135,8 @@ class SimResponse(BaseModel):
     dp_air: float
     T_sat_C: float = 0.0
     P_sat_kPa: float = 0.0
+    V_air: float = 0.0
+    CMM: float = 0.0
     row_Q: List[float]
     correlations_used: Dict
     segments: List[SegmentOut]
@@ -251,12 +255,31 @@ def simulate(req: SimRequest):
                 N_seg=m_in.N_seg, N_tubes=m_in.N_tubes,
             )
 
+        # --- Resolve V_air ↔ CMM ---
+        # Frontal area: H × W for both FT and MCHX
+        if req.hx_type == "FT":
+            face_H = (req.ft_spec or FTSpecInput()).H
+            face_W = (req.ft_spec or FTSpecInput()).W
+        else:
+            face_H = (req.mchx_spec or MCHXSpecInput()).H
+            face_W = (req.mchx_spec or MCHXSpecInput()).W
+        A_face = face_H * face_W  # [m²]
+
+        if req.air_flow_mode == "CMM" and req.CMM is not None:
+            # CMM [m³/min] → V_air [m/s]
+            V_air_resolved = (req.CMM / 60.0) / A_face if A_face > 0 else 2.0
+            CMM_resolved = req.CMM
+        else:
+            # V_air [m/s] → CMM [m³/min]
+            V_air_resolved = req.V_air if req.V_air is not None else 2.0
+            CMM_resolved = V_air_resolved * A_face * 60.0
+
         sim_input = SimulationInput(
             hx_type=req.hx_type,
             mode=req.mode,
             T_air_in=T_air_K,
             RH_in=req.RH_in,
-            V_air=req.V_air,
+            V_air=V_air_resolved,
             fluid=req.fluid,
             T_sat=T_sat_K,
             m_ref=req.m_ref,
@@ -302,6 +325,8 @@ def simulate(req: SimRequest):
             dp_air=round(result.dp_air, 1),
             T_sat_C=round(T_sat_C_resolved, 2),
             P_sat_kPa=round(P_sat_kPa_resolved, 1),
+            V_air=round(V_air_resolved, 3),
+            CMM=round(CMM_resolved, 3),
             row_Q=[round(q, 1) for q in result.row_Q],
             correlations_used=result.correlations_used,
             segments=seg_out,

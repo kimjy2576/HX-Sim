@@ -143,7 +143,7 @@ function Metric({label,value,unit,color=C.accent}) {
 function App() {
   const [hxType,setHxType]=useState("FT");
   const [mode,setMode]=useState("evap");
-  const [airIn,setAirIn]=useState({T:35,RH:0.5,V:2.0});
+  const [airIn,setAirIn]=useState({T:35,RH:0.5,flowMode:"velocity",V:2.0,CMM:null});
   const [refIn,setRefIn]=useState({fluid:"R410A",stateMode:"T",T_sat:7,P_sat:null,m_ref:0.02,twoPhase:true,x_in:0.2,T_ref_in:null});
   const [flow,setFlow]=useState("counter");
   const [ftSpec,setFtSpec]=useState({...DEFAULT_FT});
@@ -166,9 +166,11 @@ function App() {
   const run=useCallback(async()=>{
     setLoading(true);setError("");
     try {
-      const body={hx_type:hxType,mode,T_air_in_C:airIn.T,RH_in:airIn.RH,V_air:airIn.V,
+      const body={hx_type:hxType,mode,T_air_in_C:airIn.T,RH_in:airIn.RH,
+        air_flow_mode:airIn.flowMode,
         fluid:refIn.fluid,m_ref:refIn.m_ref,flow_arrangement:flow,
         two_phase_inlet:refIn.twoPhase,x_in:refIn.x_in};
+      if(airIn.flowMode==="velocity") body.V_air=airIn.V; else body.CMM=airIn.CMM||18;
       if(refIn.stateMode==="T") body.T_sat_C=refIn.T_sat; else body.P_sat_kPa=refIn.P_sat;
       if(!refIn.twoPhase&&refIn.T_ref_in!==null) body.T_ref_in_C=refIn.T_ref_in;
       if(hxType==="FT") body.ft_spec=ftSpec; else body.mchx_spec=mchxSpec;
@@ -235,7 +237,27 @@ function App() {
           <InputGroup label="🌀 Air Inlet">
             <Field label="T_air" unit="°C" value={airIn.T} onChange={v=>uA("T",v)}/>
             <Field label="RH" unit="-" value={airIn.RH} onChange={v=>uA("RH",v)} step={0.05} min={0} max={1}/>
-            <Field label="V_face" unit="m/s" value={airIn.V} onChange={v=>uA("V",v)}/>
+            {/* Velocity / CMM toggle */}
+            <div style={{display:"flex",gap:4,marginBottom:8,marginTop:4}}>
+              {["velocity","CMM"].map(m=>(
+                <button key={m} onClick={()=>uA("flowMode",m)} style={{
+                  flex:1,padding:"5px 0",borderRadius:6,border:"none",cursor:"pointer",
+                  fontWeight:700,fontSize:11,fontFamily:"inherit",
+                  background:airIn.flowMode===m?C.success:C.bg,color:airIn.flowMode===m?C.bg:C.dim}}>
+                  {m==="velocity"?"🌬 Velocity":"📦 CMM"}</button>
+              ))}
+            </div>
+            {airIn.flowMode==="velocity" ?
+              <Field label="V_face" unit="m/s" value={airIn.V} onChange={v=>uA("V",v)}/> :
+              <Field label="CMM" unit="m³/min" value={airIn.CMM||18} onChange={v=>uA("CMM",v)}/>
+            }
+            {result&&(
+              <div style={{fontSize:10,color:C.dim,marginBottom:2,paddingLeft:4}}>
+                → {airIn.flowMode==="velocity" ?
+                  `CMM = ${result.CMM?.toFixed(2)} m³/min` :
+                  `V_face = ${result.V_air?.toFixed(3)} m/s`}
+              </div>
+            )}
           </InputGroup>
 
           <InputGroup label="🧊 Refrigerant">
