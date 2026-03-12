@@ -315,8 +315,8 @@ function App() {
               <Field label="Di" unit="mm" value={Math.round(ftSpec.Di*1e5)/100} onChange={v=>uF("Di",v/1000)}/>
               <Field label="Pt" unit="mm" value={Math.round(ftSpec.Pt*1e4)/10} onChange={v=>uF("Pt",v/1000)}/>
               <Field label="Pl" unit="mm" value={Math.round(ftSpec.Pl*1e4)/10} onChange={v=>uF("Pl",v/1000)}/>
-              <Field label="Nr" unit="rows" value={ftSpec.Nr} onChange={v=>uF("Nr",parseInt(v)||1)}/>
-              <Field label="Nt" unit="tubes" value={ftSpec.Nt} onChange={v=>uF("Nt",parseInt(v)||1)}/>
+              <Field label="Row" unit="열" value={ftSpec.Nr} onChange={v=>uF("Nr",parseInt(v)||1)}/>
+              <Field label="Column" unit="단" value={ftSpec.Nt} onChange={v=>uF("Nt",parseInt(v)||1)}/>
               <Field label="FPI" unit="fins/in" value={ftSpec.FPI} onChange={v=>uF("FPI",v)}/>
               <Field label="Fin" options={["plain","wavy","louver","slit"]} value={ftSpec.fin_type}
                 onChange={v=>{uF("fin_type",v);setAirCorr(p=>({...p,selected:null}));}}/>
