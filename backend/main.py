@@ -13,6 +13,10 @@ import traceback
 from models.solver import SimulationInput, HXSolver
 from models.geometry import FinTubeSpec, MCHXSpec
 from models.properties import RefrigerantProperties
+from models.correlations import (
+    AIRSIDE_CORRELATIONS, get_available_correlations,
+    recommend_correlation, select_correlations,
+)
 
 app = FastAPI(
     title="HX Simulator API",
@@ -107,6 +111,9 @@ class SimRequest(BaseModel):
     # Flow
     flow_arrangement: Literal["counter", "parallel"] = "counter"
 
+    # Correlation selection (None = auto-recommend)
+    air_j_corr: Optional[str] = Field(None, description="Air-side j-factor correlation ID. None = auto.")
+
     # Geometry
     ft_spec: Optional[FTSpecInput] = None
     mchx_spec: Optional[MCHXSpecInput] = None
@@ -145,8 +152,10 @@ class SimResponse(BaseModel):
     P_sat_kPa: float = 0.0
     V_air: float = 0.0
     CMM: float = 0.0
+    Re_Dc: float = 0.0
     row_Q: List[float]
     correlations_used: Dict
+    correlation_recommendation: Dict = {}
     segments: List[SegmentOut]
     error: str = ""
 
@@ -299,7 +308,36 @@ def simulate(req: SimRequest):
             mchx_spec=mchx,
         )
 
+        # --- Correlation recommendation ---
+        from models.geometry import FinTubeGeo, MCHXGeo
+        from models.properties import MoistAirProperties
+        air_props = MoistAirProperties()
+        mu_air = air_props.mu_air(T_air_K)
+
+        if req.hx_type == "FT":
+            geo_temp = FinTubeGeo.from_spec(ft or FinTubeSpec())
+            Dc = geo_temp.Dc
+            rho_air = air_props.rho_air(T_air_K, 0.01)
+            G_air = rho_air * V_air_resolved / geo_temp.sigma if geo_temp.sigma > 0 else 5.0
+            Re_Dc_val = G_air * Dc / mu_air
+            fin_type = (ft or FinTubeSpec()).fin_type
+            Nr = (ft or FinTubeSpec()).Nr
+        else:
+            geo_temp = MCHXGeo.from_spec(mchx or MCHXSpec())
+            Dc = geo_temp.Dh_air
+            Re_Dc_val = 500  # approximate
+            fin_type = "mchx"
+            Nr = (mchx or MCHXSpec()).n_slabs
+
+        rec = recommend_correlation(fin_type, Re_Dc_val, Nr, req.hx_type)
+
+        # Apply user-selected or recommended correlation
         solver = HXSolver(sim_input)
+        if req.air_j_corr:
+            solver.corr["air_j"] = req.air_j_corr
+        else:
+            solver.corr["air_j"] = rec["recommended"]
+
         result = solver.solve()
 
         # Build segment output
@@ -337,14 +375,24 @@ def simulate(req: SimRequest):
             P_sat_kPa=round(P_sat_kPa_resolved, 1),
             V_air=round(V_air_resolved, 3),
             CMM=round(CMM_resolved, 3),
+            Re_Dc=round(Re_Dc_val, 0),
             row_Q=[round(q, 1) for q in result.row_Q],
             correlations_used=result.correlations_used,
+            correlation_recommendation=rec,
             segments=seg_out,
             error=result.error,
         )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Simulation error: {str(e)}\n{traceback.format_exc()}")
+
+
+@app.get("/correlations")
+def get_correlations(fin_type: str = "plain"):
+    """Get available correlations and metadata for a fin type."""
+    available = get_available_correlations(fin_type)
+    details = {cid: AIRSIDE_CORRELATIONS[cid] for cid in available if cid in AIRSIDE_CORRELATIONS}
+    return {"fin_type": fin_type, "available": available, "details": details}
 
 
 if __name__ == "__main__":

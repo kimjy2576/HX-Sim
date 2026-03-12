@@ -8,11 +8,9 @@ from typing import List, Dict, Optional, Literal
 from .properties import RefrigerantProperties, MoistAirProperties
 from .geometry import FinTubeSpec, FinTubeGeo, MCHXSpec, MCHXGeo
 from .correlations import (
-    j_factor_wang2000_plain, j_factor_wang2000_plain_high_PtPl,
-    j_factor_wang1999_wavy, j_factor_wang1999_louver, j_factor_slit,
-    j_factor_chang_wang_1997,
+    compute_j_factor, select_correlations, recommend_correlation,
     f_factor_wang2000_plain, f_factor_chang_wang_1997,
-    h_with_transition, select_correlations,
+    h_with_transition,
     h_single_gnielinski,
 )
 
@@ -448,47 +446,40 @@ class HXSolver:
         """Compute air-side HTC using selected j-factor correlation."""
         inp = self.inp
         mu = self.air.mu_air(T_air)
-        k = self.air.k_air(T_air)
         Pr = self.air.Pr_air(T_air)
         cp = 1006.0
+
+        corr_id = self.corr["air_j"]
 
         if inp.hx_type == "FT":
             spec = inp.ft_spec
             Dc = self.geo.Dc
             Re_Dc = G_air * Dc / mu
 
-            corr_name = self.corr["air_j"]
-            if corr_name == "wang2000":
-                j = j_factor_wang2000_plain(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                           spec.FPI, spec.fin_thickness)
-            elif corr_name == "wang2000_high":
-                j = j_factor_wang2000_plain_high_PtPl(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                                      spec.FPI, spec.fin_thickness)
-            elif corr_name == "wang1999_wavy":
-                j = j_factor_wang1999_wavy(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                          spec.FPI, spec.fin_thickness,
-                                          spec.wavy_amplitude, spec.wavy_wavelength)
-            elif corr_name == "wang1999_louver":
-                j = j_factor_wang1999_louver(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                            spec.FPI, spec.fin_thickness,
-                                            spec.louver_pitch, spec.louver_angle)
-            elif corr_name == "slit":
-                j = j_factor_slit(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                 spec.FPI, spec.fin_thickness,
-                                 spec.slit_height, spec.slit_width, spec.n_slits)
-            else:
-                j = j_factor_wang2000_plain(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                           spec.FPI, spec.fin_thickness)
-
-            h_o = j * G_air * cp / Pr ** (2 / 3)
-
+            j = compute_j_factor(
+                corr_id,
+                Re_Dc=Re_Dc, Nr=spec.Nr, Dc=Dc,
+                Pt=spec.Pt, Pl=spec.Pl, FPI=spec.FPI,
+                fin_thickness=spec.fin_thickness,
+                # Wavy params
+                Xa=spec.wavy_amplitude, wave_length=spec.wavy_wavelength,
+                # Louver params
+                Lp=spec.louver_pitch, theta=spec.louver_angle,
+                # Slit params
+                slit_height=spec.slit_height, slit_width=spec.slit_width,
+                n_slits=spec.n_slits,
+            )
         else:  # MCHX
             spec = inp.mchx_spec
             Re_Lp = G_air * spec.louver_pitch / mu
-            j = j_factor_chang_wang_1997(Re_Lp, spec.louver_pitch,
-                                        spec.louver_angle, spec.fin_pitch)
-            h_o = j * G_air * cp / Pr ** (2 / 3)
+            j = compute_j_factor(
+                corr_id,
+                Re_Lp=Re_Lp, Lp=spec.louver_pitch,
+                theta=spec.louver_angle, Fp=spec.fin_pitch,
+                fin_thickness=spec.fin_thickness,
+            )
 
+        h_o = j * G_air * cp / Pr ** (2 / 3)
         return max(h_o, 10.0)
 
     def _compute_b_factor(self, T_wall: float, T_air: float, W_air: float,

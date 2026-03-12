@@ -42,6 +42,29 @@ const DEFAULT_MCHX = {
 };
 const REFRIGERANTS = ["R410A","R134a","R32","R290","R1234yf","R22","R407C","R404A","R513A","R454C"];
 
+const CORR_OPTIONS = {
+  plain: [
+    {id:"auto",label:"⚡ Auto (추천)"},
+    {id:"wang2000_plain",label:"Wang(2000) — 74샘플, Re 300~15k"},
+    {id:"gray_webb1986",label:"Gray&Webb(1986) — Re 500~25k"},
+  ],
+  wavy: [
+    {id:"auto",label:"⚡ Auto (추천)"},
+    {id:"wang2002_wavy",label:"Wang(2002) — 49샘플, 무차원비 정리"},
+    {id:"wang1999_wavy",label:"Wang(1999) — 35샘플, Re 300~12k"},
+  ],
+  louver: [
+    {id:"auto",label:"⚡ Auto (추천)"},
+    {id:"chang2000_louver",label:"Chang(2000) — 91샘플, 가장 완전"},
+    {id:"wang1999_louver",label:"Wang(1999) — 35샘플, Re 300~10k"},
+  ],
+  slit: [
+    {id:"auto",label:"⚡ Auto (추천)"},
+    {id:"wang2001_slit",label:"Wang(2001) — 20샘플, Re 500~15k"},
+    {id:"manglik_bergles1995",label:"Manglik&Bergles(1995) — OSF 범용"},
+  ],
+};
+
 const C = {
   bg:"#0a0e17",surface:"#111827",card:"#1a2233",border:"#2a3a52",
   accent:"#38bdf8",accent2:"#818cf8",accent3:"#f472b6",
@@ -152,6 +175,7 @@ function App() {
   const [flow,setFlow]=useState("counter");
   const [ftSpec,setFtSpec]=useState({...DEFAULT_FT});
   const [mchxSpec,setMchxSpec]=useState({...DEFAULT_MCHX});
+  const [airCorr,setAirCorr]=useState("auto");
   const [result,setResult]=useState(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -175,6 +199,7 @@ function App() {
         fluid:refIn.fluid,m_ref:refIn.m_ref,flow_arrangement:flow,
         two_phase_inlet:refIn.twoPhase,x_in:refIn.x_in};
       if(airIn.flowMode==="velocity") body.V_air=airIn.V; else body.CMM=airIn.CMM||18;
+      if(airCorr!=="auto") body.air_j_corr=airCorr;
       if(refIn.stateMode==="T") body.T_sat_C=refIn.T_sat; else body.P_sat_kPa=refIn.P_sat;
       if(!refIn.twoPhase&&refIn.T_ref_in!==null) body.T_ref_in_C=refIn.T_ref_in;
       if(hxType==="FT") body.ft_spec=ftSpec; else body.mchx_spec=mchxSpec;
@@ -182,7 +207,7 @@ function App() {
       if(!res.ok){const e=await res.json();throw new Error(e.detail||"Failed");}
       setResult(await res.json());setTab("overview");
     }catch(e){setError(e.message);}finally{setLoading(false);}
-  },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec]);
+  },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr]);
 
   const segData=result?.segments?.filter(s=>s.tube===0)?.map(s=>({
     name:`R${s.row}S${s.seg}`,Q:s.Q,T_wall:s.T_wall,h_i:s.h_i,x:s.x_ref,eta_o:s.eta_o
@@ -316,7 +341,31 @@ function App() {
               <Field label="Nr" unit="rows" value={ftSpec.Nr} onChange={v=>uF("Nr",parseInt(v)||1)}/>
               <Field label="Nt" unit="tubes" value={ftSpec.Nt} onChange={v=>uF("Nt",parseInt(v)||1)}/>
               <Field label="FPI" unit="fins/in" value={ftSpec.FPI} onChange={v=>uF("FPI",v)}/>
-              <Field label="Fin" options={["plain","wavy","louver","slit"]} value={ftSpec.fin_type} onChange={v=>uF("fin_type",v)}/>
+              <Field label="Fin" options={["plain","wavy","louver","slit"]} value={ftSpec.fin_type}
+                onChange={v=>{uF("fin_type",v);setAirCorr("auto");}}/>
+              {/* Correlation selector */}
+              <div style={{marginBottom:8}}>
+                <div style={{fontSize:10,color:C.dim,marginBottom:3}}>Air-side j Correlation</div>
+                <select value={airCorr} onChange={e=>setAirCorr(e.target.value)} style={{
+                  width:"100%",background:C.bg,color:C.text,border:`1px solid ${C.border}`,
+                  borderRadius:6,padding:"6px 8px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                  {(CORR_OPTIONS[ftSpec.fin_type]||CORR_OPTIONS.plain).map(o=>
+                    <option key={o.id} value={o.id}>{o.label}</option>
+                  )}
+                </select>
+              </div>
+              {/* Recommendation from last result */}
+              {result?.correlation_recommendation?.recommended&&(
+                <div style={{fontSize:10,padding:"6px 8px",marginBottom:8,borderRadius:6,
+                  background:`${C.accent}11`,border:`1px solid ${C.accent}33`}}>
+                  <span style={{color:C.accent,fontWeight:700}}>⚡ 추천:</span>{" "}
+                  <span style={{color:C.text}}>{result.correlation_recommendation.recommended}</span>
+                  <span style={{color:C.dim}}> (Re_Dc={result.Re_Dc})</span>
+                  {result.correlation_recommendation.reasons?.map((r,i)=>
+                    <div key={i} style={{color:C.dim,fontSize:9,marginTop:2}}>• {r}</div>
+                  )}
+                </div>
+              )}
               {/* Fin-type specific parameters */}
               {ftSpec.fin_type==="wavy"&&(<>
                 <div style={{borderLeft:`2px solid ${C.warn}`,paddingLeft:10,marginBottom:6}}>
