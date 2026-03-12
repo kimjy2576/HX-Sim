@@ -158,6 +158,7 @@ function App() {
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
   const [tab,setTab]=useState("overview");
+  const [contourVar,setContourVar]=useState("T_wall");
   const [serverOk,setServerOk]=useState(null);
 
   useEffect(()=>{
@@ -652,7 +653,7 @@ function App() {
           ):(
             <>
               <div style={{display:"flex",gap:4,marginBottom:16}}>
-                {["overview","segments","charts"].map(t=>(
+                {["overview","contour","segments","charts"].map(t=>(
                   <button key={t} onClick={()=>setTab(t)} style={{
                     padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",
                     fontFamily:"inherit",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,
@@ -754,6 +755,201 @@ function App() {
                   <BarChart data={rowData} dataKey="Q" nameKey="name" color={mc}/>
                 </div>
               </>)}
+
+              {tab==="contour"&&(()=>{
+                const segs = result.segments || [];
+                if(segs.length===0) return <div style={{color:C.dim,fontSize:12}}>No segment data</div>;
+
+                // Build grid: rows × segs (use tube 0)
+                const tube0 = segs.filter(s=>s.tube===0);
+                const rows = [...new Set(tube0.map(s=>s.row))].sort((a,b)=>a-b);
+                const segIds = [...new Set(tube0.map(s=>s.seg))].sort((a,b)=>a-b);
+                const Nr = rows.length, Ns = segIds.length;
+
+                // Variable options
+                const vars = {
+                  T_wall:{label:"T_wall [°C]",key:"T_wall",unit:"°C",fmt:v=>v.toFixed(1)},
+                  T_air:{label:"T_air [°C]",key:"T_air_local",unit:"°C",fmt:v=>v.toFixed(1)},
+                  T_ref:{label:"T_ref [°C]",key:"T_ref",unit:"°C",fmt:v=>v.toFixed(1)},
+                  Q:{label:"Q [W]",key:"Q",unit:"W",fmt:v=>v.toFixed(1)},
+                  x_ref:{label:"x_ref [-]",key:"x_ref",unit:"",fmt:v=>v.toFixed(3)},
+                  h_i:{label:"h_i [W/m²K]",key:"h_i",unit:"",fmt:v=>v.toFixed(0)},
+                  h_o:{label:"h_o [W/m²K]",key:"h_o",unit:"",fmt:v=>v.toFixed(0)},
+                  eta_o:{label:"η_o [-]",key:"eta_o",unit:"",fmt:v=>v.toFixed(3)},
+                };
+                const cv = vars[contourVar] || vars.T_wall;
+
+                // Build 2D grid values
+                const grid = [];
+                let vMin=Infinity, vMax=-Infinity;
+                for(let ri=0;ri<Nr;ri++){
+                  const rowArr=[];
+                  for(let si=0;si<Ns;si++){
+                    const seg = tube0.find(s=>s.row===rows[ri]&&s.seg===segIds[si]);
+                    const val = seg ? seg[cv.key] : 0;
+                    rowArr.push(val);
+                    if(val<vMin) vMin=val;
+                    if(val>vMax) vMax=val;
+                  }
+                  grid.push(rowArr);
+                }
+                const vRange = vMax-vMin || 1;
+
+                // Color interpolation (blue → cyan → green → yellow → red)
+                function valToColor(v){
+                  const t = Math.max(0,Math.min(1,(v-vMin)/vRange));
+                  // 5-stop gradient
+                  const stops = [
+                    [0.0, [30,70,200]],   // blue
+                    [0.25,[30,180,220]],   // cyan
+                    [0.5, [50,200,80]],    // green
+                    [0.75,[240,200,40]],   // yellow
+                    [1.0, [220,50,40]],    // red
+                  ];
+                  let i=0;
+                  for(;i<stops.length-1;i++) if(t<=stops[i+1][0]) break;
+                  const [t0,c0]=stops[i], [t1,c1]=stops[Math.min(i+1,stops.length-1)];
+                  const f = t1>t0 ? (t-t0)/(t1-t0) : 0;
+                  const r=Math.round(c0[0]+(c1[0]-c0[0])*f);
+                  const g=Math.round(c0[1]+(c1[1]-c0[1])*f);
+                  const b=Math.round(c0[2]+(c1[2]-c0[2])*f);
+                  return `rgb(${r},${g},${b})`;
+                }
+
+                // SVG dimensions
+                const pad={top:45,bottom:50,left:55,right:20};
+                const cellW=Math.min(50,Math.max(28,(480-pad.left-pad.right)/Ns));
+                const cellH=Math.min(50,Math.max(28,(300-pad.top-pad.bottom)/Nr));
+                const svgW=pad.left+Ns*cellW+pad.right+80;
+                const svgH=pad.top+Nr*cellH+pad.bottom;
+
+                // Color bar
+                const cbX=pad.left+Ns*cellW+20, cbW=14, cbH=Nr*cellH;
+                const cbStops=20;
+
+                return (
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}>
+                    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+                      <div style={{fontSize:11,color:C.accent,fontWeight:700,letterSpacing:1}}>HX CONTOUR MAP</div>
+                      <select value={contourVar} onChange={e=>setContourVar(e.target.value)}
+                        style={{background:C.bg,color:C.text,border:`1px solid ${C.border}`,
+                          borderRadius:6,padding:"4px 8px",fontSize:11,fontFamily:"inherit"}}>
+                        {Object.entries(vars).map(([k,v])=>
+                          <option key={k} value={k}>{v.label}</option>
+                        )}
+                      </select>
+                      <span style={{fontSize:10,color:C.dim}}>Tube 0 · {Nr} rows × {Ns} segs</span>
+                    </div>
+                    <div style={{overflowX:"auto"}}>
+                      <svg width={svgW} height={svgH} style={{display:"block"}}>
+                        {/* Title */}
+                        <text x={pad.left+Ns*cellW/2} y={16} textAnchor="middle"
+                          style={{fontSize:12,fill:C.text,fontWeight:700}}>{cv.label}</text>
+
+                        {/* Air flow arrow */}
+                        <defs>
+                          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                            <polygon points="0 0, 8 3, 0 6" fill={C.accent}/>
+                          </marker>
+                        </defs>
+                        <line x1={12} y1={pad.top+Nr*cellH/2-20} x2={12} y2={pad.top+Nr*cellH/2+20}
+                          stroke={C.accent} strokeWidth={2} markerEnd="url(#arrowhead)"/>
+                        <text x={12} y={pad.top+Nr*cellH/2-25} textAnchor="middle"
+                          style={{fontSize:9,fill:C.accent,fontWeight:700}}>AIR</text>
+
+                        {/* Heatmap cells */}
+                        {grid.map((row,ri)=>
+                          row.map((val,si)=>{
+                            const x=pad.left+si*cellW, y=pad.top+ri*cellH;
+                            const col=valToColor(val);
+                            return (
+                              <g key={`${ri}-${si}`}>
+                                <rect x={x} y={y} width={cellW} height={cellH}
+                                  fill={col} stroke={C.bg} strokeWidth={1} rx={2}/>
+                                <text x={x+cellW/2} y={y+cellH/2+4} textAnchor="middle"
+                                  style={{fontSize:cellW>35?9:7,fill:"#fff",fontWeight:600,
+                                    textShadow:"0 0 3px rgba(0,0,0,0.7)"}}>
+                                  {cv.fmt(val)}
+                                </text>
+                              </g>
+                            );
+                          })
+                        )}
+
+                        {/* Tube circles overlay (staggered) */}
+                        {rows.map((r,ri)=>{
+                          const cy=pad.top+ri*cellH+cellH/2;
+                          const tubeR=Math.min(cellH*0.3,8);
+                          // Place tubes at segment boundaries (between segments)
+                          return segIds.slice(0,-1).map((s,si)=>{
+                            const cx=pad.left+(si+1)*cellW;
+                            // Stagger odd rows
+                            const offset = ri%2===1 ? cellW*0.5 : 0;
+                            return (
+                              <circle key={`t${ri}-${si}`} cx={cx+offset*0} cy={cy}
+                                r={tubeR} fill="none" stroke={`${C.text}44`} strokeWidth={1}/>
+                            );
+                          });
+                        })}
+
+                        {/* Row labels */}
+                        {rows.map((r,ri)=>(
+                          <text key={`rl${ri}`} x={pad.left-6} y={pad.top+ri*cellH+cellH/2+4}
+                            textAnchor="end" style={{fontSize:10,fill:C.dim}}>R{r}</text>
+                        ))}
+
+                        {/* Segment labels */}
+                        {segIds.map((s,si)=>(
+                          <text key={`sl${si}`} x={pad.left+si*cellW+cellW/2} y={pad.top+Nr*cellH+14}
+                            textAnchor="middle" style={{fontSize:10,fill:C.dim}}>S{s}</text>
+                        ))}
+
+                        {/* Axis labels */}
+                        <text x={pad.left+Ns*cellW/2} y={pad.top+Nr*cellH+32}
+                          textAnchor="middle" style={{fontSize:10,fill:C.dim,fontWeight:600}}>
+                          ← Segment along tube →
+                        </text>
+                        <text x={28} y={pad.top+Nr*cellH/2} textAnchor="middle"
+                          transform={`rotate(-90,28,${pad.top+Nr*cellH/2})`}
+                          style={{fontSize:10,fill:C.dim,fontWeight:600}}>
+                          Row (airflow →)
+                        </text>
+
+                        {/* Color bar */}
+                        {Array.from({length:cbStops}).map((_,i)=>{
+                          const t = 1 - i/(cbStops-1);
+                          const val = vMin + t*vRange;
+                          const y = pad.top + i*(cbH/cbStops);
+                          return (
+                            <rect key={`cb${i}`} x={cbX} y={y} width={cbW} height={cbH/cbStops+1}
+                              fill={valToColor(val)} stroke="none"/>
+                          );
+                        })}
+                        <rect x={cbX} y={pad.top} width={cbW} height={cbH}
+                          fill="none" stroke={C.border} strokeWidth={1} rx={2}/>
+                        <text x={cbX+cbW+4} y={pad.top+6} style={{fontSize:8,fill:C.text}}>
+                          {cv.fmt(vMax)}
+                        </text>
+                        <text x={cbX+cbW+4} y={pad.top+cbH} style={{fontSize:8,fill:C.text}}>
+                          {cv.fmt(vMin)}
+                        </text>
+                        <text x={cbX+cbW+4} y={pad.top+cbH/2+3} style={{fontSize:8,fill:C.dim}}>
+                          {cv.fmt((vMin+vMax)/2)}
+                        </text>
+                      </svg>
+                    </div>
+
+                    {/* Summary stats */}
+                    <div style={{display:"flex",gap:16,marginTop:10,padding:"8px 10px",
+                      background:C.bg,borderRadius:6,fontSize:11}}>
+                      <span><span style={{color:C.dim}}>Min:</span> <span style={{color:valToColor(vMin),fontWeight:700}}>{cv.fmt(vMin)}</span></span>
+                      <span><span style={{color:C.dim}}>Max:</span> <span style={{color:valToColor(vMax),fontWeight:700}}>{cv.fmt(vMax)}</span></span>
+                      <span><span style={{color:C.dim}}>Range:</span> {cv.fmt(vRange)}</span>
+                      <span><span style={{color:C.dim}}>Mean:</span> {cv.fmt(tube0.reduce((s,v)=>s+v[cv.key],0)/tube0.length)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {tab==="segments"&&(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14,overflowX:"auto"}}>
