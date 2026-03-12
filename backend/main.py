@@ -3,8 +3,11 @@ FastAPI Backend — Heat Exchanger Simulator API
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import Optional, Literal, List, Dict
+from pathlib import Path
 import traceback
 
 from models.solver import SimulationInput, HXSolver
@@ -133,8 +136,17 @@ class SimResponse(BaseModel):
 # Endpoints
 # ============================================================
 
+STATIC_DIR = Path(__file__).parent / "static"
+
+
 @app.get("/")
 def root():
+    """Serve frontend UI."""
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/api")
+def api_info():
     return {
         "name": "HX Simulator API v7.9",
         "description": "FT-HX / MCHX Level 2 Tube-Segment Model",
