@@ -33,6 +33,14 @@ AIRSIDE_CORRELATIONS = {
         "samples": 74,
         "params": ["Re_Dc", "Nr", "Dc", "Pt", "Pl", "FPI", "δ"],
         "note": "가장 널리 사용되는 plain fin 상관식. Nr별 분리 모델.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 6,     "unit": "-"},
+            "Pt/Pl":    {"min": 1.0, "max": 1.35, "unit": "-"},
+            "FPI":      {"min": 6, "max": 18,     "unit": "fins/in"},
+            "Dc":       {"min": 6.35, "max": 12.7, "unit": "mm"},
+            "Pt":       {"min": 17.7, "max": 31.75,"unit": "mm"},
+            "Pl":       {"min": 12.4, "max": 27.5, "unit": "mm"},
+        },
     },
     "gray_webb1986": {
         "name": "Gray & Webb (1986)",
@@ -41,7 +49,12 @@ AIRSIDE_CORRELATIONS = {
         "Re_range": [500, 25000],
         "samples": 0,
         "params": ["Re_Dc", "Nr", "Dc", "Pt", "Pl"],
-        "note": "초기 범용 plain fin 상관식. 단순하지만 적용 범위 넓음.",
+        "note": "초기 범용 plain fin 상관식. Nr ≥ 4 기반, 고 Re 대응.",
+        "geo_bounds": {
+            "Nr":       {"min": 4, "max": 8,      "unit": "-"},
+            "Pt/Dc":    {"min": 1.97, "max": 2.55, "unit": "-"},
+            "Pl/Dc":    {"min": 1.70, "max": 2.58, "unit": "-"},
+        },
     },
     # ── Wavy ──
     "wang1999_wavy": {
@@ -52,6 +65,13 @@ AIRSIDE_CORRELATIONS = {
         "samples": 35,
         "params": ["Re_Dc", "Nr", "Dc", "Pt", "Pl", "FPI", "δ", "Xa", "λ"],
         "note": "웨이비 핀 전용. Xa(진폭), λ(파장) 반영.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 4,      "unit": "-"},
+            "FPI":      {"min": 8, "max": 20,     "unit": "fins/in"},
+            "Dc":       {"min": 6.9, "max": 16.4, "unit": "mm"},
+            "Xa":       {"min": 0.3, "max": 2.5,  "unit": "mm"},
+            "Pt":       {"min": 21.0, "max": 25.4, "unit": "mm"},
+        },
     },
     "wang2002_wavy": {
         "name": "Wang et al. (2002)",
@@ -61,6 +81,13 @@ AIRSIDE_CORRELATIONS = {
         "samples": 49,
         "params": ["Re_Dc", "Nr", "Dc", "Pt", "Pl", "FPI", "δ", "Xa", "λ"],
         "note": "1999 업그레이드. 무차원비 Xa/Fp, 2Xa/λ 정리. 49샘플.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 4,      "unit": "-"},
+            "FPI":      {"min": 8, "max": 20,     "unit": "fins/in"},
+            "Dc":       {"min": 6.9, "max": 16.4, "unit": "mm"},
+            "2Xa/Fp":   {"min": 0.24, "max": 0.58, "unit": "-"},
+            "Xa":       {"min": 0.3, "max": 2.5,  "unit": "mm"},
+        },
     },
     # ── Louver ──
     "wang1999_louver": {
@@ -71,6 +98,14 @@ AIRSIDE_CORRELATIONS = {
         "samples": 35,
         "params": ["Re_Dc", "Nr", "Dc", "Pt", "Pl", "FPI", "δ", "Lp", "θ"],
         "note": "FT용 루버 핀 상관식. Lp(루버피치), θ(각도) 반영.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 6,      "unit": "-"},
+            "FPI":      {"min": 8, "max": 25,     "unit": "fins/in"},
+            "Dc":       {"min": 6.9, "max": 16.4, "unit": "mm"},
+            "Lp":       {"min": 0.8, "max": 3.0,  "unit": "mm"},
+            "θ":        {"min": 10, "max": 40,    "unit": "°"},
+            "Pt":       {"min": 17.7, "max": 31.75,"unit": "mm"},
+        },
     },
     "chang2000_louver": {
         "name": "Chang et al. (2000)",
@@ -78,8 +113,15 @@ AIRSIDE_CORRELATIONS = {
         "fin_types": ["louver"],
         "Re_range": [100, 5000],
         "samples": 91,
-        "params": ["Re_Dc", "Nr", "Dc", "Pt", "Pl", "FPI", "δ", "Lp", "θ", "Fl", "Ll", "Td"],
-        "note": "91샘플 일반화. 가장 완전한 FT louver 상관식. Fl·Ll·Td 추가.",
+        "params": ["Re_Dc", "Nr", "Dc", "Pt", "Pl", "FPI", "δ", "Lp", "θ"],
+        "note": "91샘플 일반화. 가장 완전한 FT louver 상관식.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 3,      "unit": "-"},
+            "FPI":      {"min": 5, "max": 30,     "unit": "fins/in"},
+            "Dc":       {"min": 5.0, "max": 25.0, "unit": "mm"},
+            "Lp":       {"min": 0.8, "max": 2.5,  "unit": "mm"},
+            "θ":        {"min": 15, "max": 35,    "unit": "°"},
+        },
     },
     # ── Slit ──
     "wang2001_slit": {
@@ -90,6 +132,13 @@ AIRSIDE_CORRELATIONS = {
         "samples": 20,
         "params": ["Re_Dc", "Nr", "Dc", "FPI", "δ", "Ss", "Sh", "n_slits"],
         "note": "슬릿 핀 전용. Ss(높이), n_slits(개수) 반영.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 6,      "unit": "-"},
+            "FPI":      {"min": 8, "max": 20,     "unit": "fins/in"},
+            "Dc":       {"min": 8.0, "max": 16.0, "unit": "mm"},
+            "Ss":       {"min": 0.5, "max": 2.0,  "unit": "mm"},
+            "n_slits":  {"min": 4, "max": 12,     "unit": "-"},
+        },
     },
     "manglik_bergles1995": {
         "name": "Manglik & Bergles (1995)",
@@ -99,6 +148,11 @@ AIRSIDE_CORRELATIONS = {
         "samples": 0,
         "params": ["Re_Dh", "s/h", "t/l", "t/s"],
         "note": "OSF(Offset Strip Fin) 범용. 가장 폭넓은 검증 데이터.",
+        "geo_bounds": {
+            "s/h":      {"min": 0.134, "max": 0.997, "unit": "-"},
+            "t/l":      {"min": 0.012, "max": 0.048, "unit": "-"},
+            "t/s":      {"min": 0.012, "max": 0.048, "unit": "-"},
+        },
     },
     # ── MCHX ──
     "chang_wang1997": {
@@ -109,8 +163,129 @@ AIRSIDE_CORRELATIONS = {
         "samples": 18,
         "params": ["Re_Lp", "θ", "Fp", "Lp"],
         "note": "MCHX 루버핀 전용. Re_Lp 기반. 18샘플 간략화 버전.",
+        "geo_bounds": {
+            "θ":        {"min": 20, "max": 35,    "unit": "°"},
+            "Lp":       {"min": 0.7, "max": 2.5,  "unit": "mm"},
+            "Fp":       {"min": 1.0, "max": 3.0,  "unit": "mm"},
+        },
     },
 }
+
+
+# ====================================================================
+# GEOMETRY VALIDATION
+# ====================================================================
+
+def validate_correlation(corr_id: str, spec_values: dict) -> dict:
+    """
+    Validate input geometry against correlation bounds.
+
+    spec_values: dict of actual values to check, e.g.:
+      {"Nr": 4, "FPI": 14, "Dc": 9.76, "Pt": 25.4, "Pl": 22.0,
+       "Lp": 1.7, "θ": 27, "Xa": 1.0, "Ss": 1.0, "Sh": 2.0,
+       "n_slits": 6, "Re_Dc": 2042, "Pt/Pl": 1.155, "Pt/Dc": 2.60,
+       "Pl/Dc": 2.25, "2Xa/Fp": 0.33, "s/h": 0.5, "t/l": 0.03, "t/s": 0.03}
+
+    Returns: {
+      "valid": True/False,
+      "warnings": [{"param": ..., "value": ..., "range": ..., "severity": ...}],
+      "in_range_count": N, "total_checked": M,
+    }
+    """
+    meta = AIRSIDE_CORRELATIONS.get(corr_id)
+    if not meta:
+        return {"valid": False, "warnings": [{"param": "corr_id", "value": corr_id,
+                "range": "N/A", "severity": "error", "msg": f"Unknown correlation: {corr_id}"}],
+                "in_range_count": 0, "total_checked": 0}
+
+    warnings = []
+    in_range = 0
+    total = 0
+
+    # Check Re range
+    Re_val = spec_values.get("Re_Dc") or spec_values.get("Re_Lp")
+    if Re_val is not None:
+        total += 1
+        lo, hi = meta["Re_range"]
+        if lo <= Re_val <= hi:
+            in_range += 1
+        else:
+            sev = "error" if (Re_val < lo * 0.5 or Re_val > hi * 2) else "warning"
+            warnings.append({
+                "param": "Re", "value": round(Re_val, 0),
+                "range": f"{lo}~{hi}", "severity": sev,
+                "msg": f"Re={Re_val:.0f} 은 유효 범위 {lo}~{hi} 밖임"
+            })
+
+    # Check geometry bounds
+    geo = meta.get("geo_bounds", {})
+    for param, bounds in geo.items():
+        val = spec_values.get(param)
+        if val is None:
+            continue
+        total += 1
+        lo = bounds["min"]
+        hi = bounds["max"]
+        unit = bounds.get("unit", "")
+
+        if lo <= val <= hi:
+            in_range += 1
+        else:
+            # Severity: how far out of range?
+            if val < lo:
+                deviation = (lo - val) / lo if lo > 0 else 1.0
+            else:
+                deviation = (val - hi) / hi if hi > 0 else 1.0
+
+            sev = "error" if deviation > 0.5 else "warning"
+            warnings.append({
+                "param": param, "value": round(val, 3),
+                "range": f"{lo}~{hi} {unit}", "severity": sev,
+                "msg": f"{param}={val:.3g} 은 유효 범위 {lo}~{hi} {unit} 밖 ({'+' if val > hi else ''}{(val-hi if val > hi else val-lo):.3g})"
+            })
+
+    return {
+        "valid": len([w for w in warnings if w["severity"] == "error"]) == 0,
+        "warnings": warnings,
+        "in_range_count": in_range,
+        "total_checked": total,
+    }
+
+
+def build_spec_values(ft_spec, geo, Re_Dc: float) -> dict:
+    """
+    Build spec_values dict from FinTubeSpec + FinTubeGeo for validation.
+    All dimensional values in mm for comparison with bounds.
+    """
+    Fp = 0.0254 / ft_spec.FPI  # m
+    Dc = geo.Dc  # m
+
+    vals = {
+        "Re_Dc": Re_Dc,
+        "Nr": ft_spec.Nr,
+        "FPI": ft_spec.FPI,
+        "Dc": Dc * 1000,          # mm
+        "Pt": ft_spec.Pt * 1000,   # mm
+        "Pl": ft_spec.Pl * 1000,   # mm
+        "Pt/Pl": ft_spec.Pt / ft_spec.Pl if ft_spec.Pl > 0 else 999,
+        "Pt/Dc": ft_spec.Pt / Dc if Dc > 0 else 999,
+        "Pl/Dc": ft_spec.Pl / Dc if Dc > 0 else 999,
+        # Wavy
+        "Xa": ft_spec.wavy_amplitude * 1000,  # mm
+        "2Xa/Fp": 2 * ft_spec.wavy_amplitude / Fp if Fp > 0 else 0,
+        # Louver
+        "Lp": ft_spec.louver_pitch * 1000,    # mm
+        "θ": ft_spec.louver_angle,             # degrees
+        # Slit
+        "Ss": ft_spec.slit_height * 1000,     # mm
+        "Sh": ft_spec.slit_width * 1000,      # mm
+        "n_slits": ft_spec.n_slits,
+        # Manglik&Bergles ratios
+        "s/h": ft_spec.slit_width / ft_spec.slit_height if ft_spec.slit_height > 0 else 0.5,
+        "t/l": ft_spec.fin_thickness / Fp if Fp > 0 else 0.03,
+        "t/s": ft_spec.fin_thickness / ft_spec.slit_width if ft_spec.slit_width > 0 else 0.03,
+    }
+    return vals
 
 
 def get_available_correlations(fin_type: str) -> list:
@@ -129,68 +304,74 @@ def get_correlation_info(corr_id: str) -> dict:
 
 
 def recommend_correlation(fin_type: str, Re_Dc: float, Nr: int,
-                          hx_type: str = "FT") -> dict:
+                          hx_type: str = "FT",
+                          spec_values: dict = None) -> dict:
     """
-    Recommend the best correlation based on operating conditions.
-    Returns: {"recommended": corr_id, "available": [...], "reasons": [...]}
+    Recommend the best correlation based on operating + geometry conditions.
+    Returns: {"recommended": corr_id, "available": [...], "reasons": [...],
+              "validations": {corr_id: validation_result, ...}}
     """
     if hx_type == "MCHX":
+        val = validate_correlation("chang_wang1997", spec_values or {"Re_Lp": Re_Dc})
         return {
             "recommended": "chang_wang1997",
             "available": ["chang_wang1997"],
             "reasons": ["MCHX 루버핀 전용 상관식"],
+            "validations": {"chang_wang1997": val},
         }
 
     available = get_available_correlations(fin_type)
     if not available:
         available = get_available_correlations("plain")
 
+    # Validate all available correlations against geometry
+    validations = {}
+    sv = spec_values or {"Re_Dc": Re_Dc, "Nr": Nr}
+    for cid in available:
+        validations[cid] = validate_correlation(cid, sv)
+
+    # Score: prefer (1) all-valid, (2) more samples, (3) Re in range
+    def score(cid):
+        v = validations[cid]
+        meta = AIRSIDE_CORRELATIONS.get(cid, {})
+        n_errors = len([w for w in v["warnings"] if w["severity"] == "error"])
+        n_warnings = len([w for w in v["warnings"] if w["severity"] == "warning"])
+        samples = meta.get("samples", 0)
+        Re_lo, Re_hi = meta.get("Re_range", [0, 99999])
+        re_in = 1 if Re_lo <= Re_Dc <= Re_hi else 0
+        # Higher is better: no errors > no warnings > more samples > Re match
+        return (-n_errors * 100, -n_warnings * 10, samples, re_in)
+
+    ranked = sorted(available, key=score, reverse=True)
+    recommended = ranked[0]
+
     reasons = []
-    recommended = available[0]  # default: first
+    rec_val = validations[recommended]
+    rec_meta = AIRSIDE_CORRELATIONS.get(recommended, {})
 
-    if fin_type == "plain":
-        if 300 <= Re_Dc <= 15000:
-            recommended = "wang2000_plain"
-            reasons.append(f"Re_Dc={Re_Dc:.0f} → Wang(2000) 적용 범위 내 (300~15000)")
-            reasons.append("74샘플 기반, Nr별 분리 모델 — 가장 정확")
-        elif Re_Dc > 15000:
-            recommended = "gray_webb1986"
-            reasons.append(f"Re_Dc={Re_Dc:.0f} > 15000 → Gray&Webb(1986) 고Re 범위")
-        else:
-            recommended = "wang2000_plain"
-            reasons.append(f"Re_Dc={Re_Dc:.0f} 저Re → Wang(2000) 외삽 사용")
+    if rec_val["valid"]:
+        Re_lo, Re_hi = rec_meta.get("Re_range", [0, 99999])
+        reasons.append(f"Re_Dc={Re_Dc:.0f}, 기하 조건 모두 유효 범위 내")
+        if rec_meta.get("samples", 0) > 0:
+            reasons.append(f"{rec_meta['samples']}샘플 기반 — {rec_meta.get('name', '')}")
+    else:
+        n_warn = len(rec_val["warnings"])
+        reasons.append(f"⚠️ {n_warn}개 범위 초과 항목 있음 — 가장 적합한 상관식 선택")
+        for w in rec_val["warnings"][:2]:
+            reasons.append(f"  {w['msg']}")
 
-    elif fin_type == "wavy":
-        if Re_Dc <= 10000:
-            recommended = "wang2002_wavy"
-            reasons.append(f"Re_Dc={Re_Dc:.0f} → Wang(2002) 적용 범위 내 (300~10000)")
-            reasons.append("49샘플, 무차원 기하비 정리 — 1999 대비 개선")
-        else:
-            recommended = "wang1999_wavy"
-            reasons.append(f"Re_Dc={Re_Dc:.0f} > 10000 → Wang(1999) 넓은 Re 범위")
-
-    elif fin_type == "louver":
-        if Re_Dc <= 5000:
-            recommended = "chang2000_louver"
-            reasons.append(f"Re_Dc={Re_Dc:.0f} → Chang(2000) 적용 범위 내 (100~5000)")
-            reasons.append("91샘플 일반화 — 가장 완전한 louver 상관식")
-        else:
-            recommended = "wang1999_louver"
-            reasons.append(f"Re_Dc={Re_Dc:.0f} > 5000 → Wang(1999) 넓은 Re 범위")
-
-    elif fin_type == "slit":
-        if Re_Dc >= 500:
-            recommended = "wang2001_slit"
-            reasons.append(f"Re_Dc={Re_Dc:.0f} → Wang(2001) 적용 범위 (500~15000)")
-        else:
-            recommended = "manglik_bergles1995"
-            reasons.append(f"Re_Dc={Re_Dc:.0f} < 500 → Manglik&Bergles 저Re 대응")
-            reasons.append("OSF 범용 — Re 120부터 적용 가능")
+    # Add notes about other options
+    for cid in ranked[1:]:
+        v = validations[cid]
+        m = AIRSIDE_CORRELATIONS.get(cid, {})
+        if v["valid"] and not rec_val["valid"]:
+            reasons.append(f"💡 {m.get('name',cid)}: 기하 범위 모두 만족 (대안)")
 
     return {
         "recommended": recommended,
         "available": available,
         "reasons": reasons,
+        "validations": validations,
     }
 
 

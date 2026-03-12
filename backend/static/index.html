@@ -354,18 +354,64 @@ function App() {
                   )}
                 </select>
               </div>
-              {/* Recommendation from last result */}
-              {result?.correlation_recommendation?.recommended&&(
-                <div style={{fontSize:10,padding:"6px 8px",marginBottom:8,borderRadius:6,
-                  background:`${C.accent}11`,border:`1px solid ${C.accent}33`}}>
-                  <span style={{color:C.accent,fontWeight:700}}>⚡ 추천:</span>{" "}
-                  <span style={{color:C.text}}>{result.correlation_recommendation.recommended}</span>
-                  <span style={{color:C.dim}}> (Re_Dc={result.Re_Dc})</span>
-                  {result.correlation_recommendation.reasons?.map((r,i)=>
-                    <div key={i} style={{color:C.dim,fontSize:9,marginTop:2}}>• {r}</div>
-                  )}
-                </div>
-              )}
+              {/* Recommendation + Validation from last result */}
+              {result?.correlation_recommendation?.recommended&&(()=>{
+                const rec = result.correlation_recommendation;
+                const usedCorr = result.correlations_used?.air_j;
+                const usedVal = rec.user_validation || rec.validations?.[usedCorr] || rec.validations?.[rec.recommended];
+                const warnings = usedVal?.warnings || [];
+                const hasErr = warnings.some(w=>w.severity==="error");
+                const hasWarn = warnings.length > 0;
+                const borderColor = hasErr ? C.err : hasWarn ? C.warn : C.success;
+                return (
+                  <div style={{fontSize:10,padding:"6px 8px",marginBottom:8,borderRadius:6,
+                    background:`${borderColor}11`,border:`1px solid ${borderColor}44`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                      <span style={{color:C.accent,fontWeight:700}}>⚡ 추천:</span>
+                      <span style={{color:C.text}}>{rec.recommended}</span>
+                      <span style={{color:C.dim,fontSize:9}}>(Re_Dc={result.Re_Dc})</span>
+                    </div>
+                    {rec.reasons?.map((r,i)=>
+                      <div key={i} style={{color:C.dim,fontSize:9,marginTop:1}}>• {r}</div>
+                    )}
+                    {/* Validation status for used correlation */}
+                    {usedVal && (
+                      <div style={{marginTop:5,paddingTop:5,borderTop:`1px solid ${borderColor}22`}}>
+                        <div style={{fontWeight:700,color:borderColor,fontSize:9,marginBottom:2}}>
+                          {hasErr ? "🚫 범위 초과 (결과 신뢰도 낮음)" :
+                           hasWarn ? "⚠️ 일부 범위 초과" : "✅ 기하 조건 모두 유효"}
+                          <span style={{color:C.dim,fontWeight:400}}> — {usedVal.in_range_count}/{usedVal.total_checked} 항목 만족</span>
+                        </div>
+                        {warnings.map((w,i)=>(
+                          <div key={i} style={{fontSize:9,marginTop:2,
+                            color:w.severity==="error"?C.err:C.warn}}>
+                            {w.severity==="error"?"🚫":"⚠️"} {w.param}: {w.value} (범위 {w.range})
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Show all available correlations' validity */}
+                    {rec.validations && Object.keys(rec.validations).length > 1 && (
+                      <div style={{marginTop:5,paddingTop:5,borderTop:`1px solid ${borderColor}22`}}>
+                        <div style={{fontSize:9,color:C.dim,fontWeight:700,marginBottom:2}}>가용 상관식 유효성:</div>
+                        {rec.available?.map(cid=>{
+                          const v = rec.validations[cid];
+                          const errs = v?.warnings?.filter(w=>w.severity==="error")?.length||0;
+                          const warns = v?.warnings?.length||0;
+                          const icon = errs>0?"🚫":warns>0?"⚠️":"✅";
+                          const clr = errs>0?C.err:warns>0?C.warn:C.success;
+                          return (
+                            <div key={cid} style={{fontSize:9,color:clr,marginTop:1}}>
+                              {icon} {cid} ({v?.in_range_count}/{v?.total_checked})
+                              {warns>0&&<span style={{color:C.dim}}> — {warns}개 범위 초과</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               {/* Fin-type specific parameters */}
               {ftSpec.fin_type==="wavy"&&(<>
                 <div style={{borderLeft:`2px solid ${C.warn}`,paddingLeft:10,marginBottom:6}}>
