@@ -9,8 +9,8 @@ from .properties import RefrigerantProperties, MoistAirProperties
 from .geometry import FinTubeSpec, FinTubeGeo, MCHXSpec, MCHXGeo
 from .correlations import (
     compute_j_factor, select_correlations, recommend_correlation,
-    f_factor_wang2000_plain, f_factor_slit, f_factor_wavy, f_factor_louver,
-    f_factor_chang_wang_1997,
+    compute_f_factor, recommend_f_correlation, get_available_f_correlations,
+    FSIDE_CORRELATIONS,
     h_with_transition,
     h_single_gnielinski,
 )
@@ -522,12 +522,7 @@ class HXSolver:
     def _compute_dp_air(self, G_air: float, T_in: float, T_out: float) -> float:
         """
         Air-side pressure drop — Kays & London (1984) formulation.
-        ΔP = G²/(2ρᵢ) × [Kc + (1+σ²)(ρᵢ/ρₒ-1) + f×(A_t/A_c)×(ρᵢ/ρₘ) - Ke×(ρᵢ/ρₒ)]
-
-        Includes:
-        - Core friction with fin-type specific f-factor
-        - Entrance/exit contraction/expansion losses (Kc, Ke)
-        - Flow acceleration from density change
+        Uses f-factor from registry (auto or manual selection).
         """
         inp = self.inp
         T_avg = (T_in + T_out) / 2
@@ -542,35 +537,66 @@ class HXSolver:
             Re_Dc = G_air * Dc / mu
             sigma = self.geo.sigma
 
-            # Fin-type specific f-factor
-            if spec.fin_type == "slit":
-                f = f_factor_slit(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                  spec.FPI, spec.fin_thickness,
-                                  spec.slit_height, spec.slit_width, spec.n_slits)
-            elif spec.fin_type == "wavy":
-                f = f_factor_wavy(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                  spec.FPI, spec.fin_thickness,
-                                  spec.wavy_amplitude, spec.wavy_wavelength)
-            elif spec.fin_type == "louver":
-                f = f_factor_louver(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                    spec.FPI, spec.fin_thickness,
-                                    spec.louver_pitch, spec.louver_angle)
-            else:
-                f = f_factor_wang2000_plain(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                           spec.FPI, spec.fin_thickness)
+            # Determine f-factor correlation
+            f_corr_id = getattr(self, '_f_corr_id', None)
+            if not f_corr_id:
+                # Auto-select default based on fin type
+                fin_type_map = {
+                    "plain": "f_wang2000_plain",
+                    "wavy": "f_wang1999_wavy",
+                    "slit": "f_wang2001_slit",
+                    "louver": "f_louver_enhanced",
+                }
+                f_corr_id = fin_type_map.get(spec.fin_type, "f_wang2000_plain")
+
+            # Build kwargs for the correlation
+            f_kwargs = dict(
+                Re_Dc=Re_Dc, Nr=spec.Nr, Dc=Dc,
+                Pt=spec.Pt, Pl=spec.Pl, FPI=spec.FPI,
+                fin_thickness=spec.fin_thickness,
+                Xa=spec.wavy_amplitude, wave_length=spec.wavy_wavelength,
+                slit_height=spec.slit_height, slit_width=spec.slit_width,
+                n_slits=spec.n_slits,
+                Lp=spec.louver_pitch, theta=spec.louver_angle,
+                Ao_Ac=self.geo.A_total / self.geo.A_c if self.geo.A_c > 0 else 200,
+            )
+
+            try:
+                f = compute_f_factor(f_corr_id, **f_kwargs)
+            except Exception:
+                # Fallback to plain
+                f = compute_f_factor("f_wang2000_plain", **f_kwargs)
+
+            # Store used f-correlation info
+            self.corr["air_f"] = f_corr_id
+            self.corr["f_value"] = round(f, 6)
+            self.corr["Re_Dc_f"] = round(Re_Dc, 1)
 
             A_ratio = self.geo.A_total / self.geo.A_c if self.geo.A_c > 0 else 10
-
-            # Kc, Ke from Kays & London (1984), approximation for tube banks
             Kc = 0.42 * (1 - sigma ** 2)
-            Ke = (1 - sigma ** 2 - 0.4 * (1 - sigma ** 2) ** 1.25)
-            Ke = max(Ke, 0.0)
+            Ke = max((1 - sigma ** 2 - 0.4 * (1 - sigma ** 2) ** 1.25), 0.0)
 
         else:
             spec = inp.mchx_spec
             Re_Lp = G_air * spec.louver_pitch / mu
-            f = f_factor_chang_wang_1997(Re_Lp, spec.louver_pitch,
-                                        spec.louver_angle, spec.fin_pitch)
+
+            f_corr_id = getattr(self, '_f_corr_id', None)
+            if not f_corr_id:
+                f_corr_id = "f_chang_wang1997_mchx"
+
+            f_kwargs = dict(
+                Re_Lp=Re_Lp, Lp=spec.louver_pitch,
+                theta=spec.louver_angle, Fp=spec.fin_pitch,
+            )
+
+            try:
+                f = compute_f_factor(f_corr_id, **f_kwargs)
+            except Exception:
+                f = compute_f_factor("f_chang_wang1997_mchx", **f_kwargs)
+
+            self.corr["air_f"] = f_corr_id
+            self.corr["f_value"] = round(f, 6)
+
             sigma = self.geo.sigma
             A_ratio = self.geo.A_total / self.geo.A_c if self.geo.A_c > 0 else 10
             Kc = 0.42 * (1 - sigma ** 2)

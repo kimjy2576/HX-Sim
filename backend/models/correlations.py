@@ -1323,143 +1323,415 @@ def compute_j_factor(corr_id: str, **kwargs) -> float:
 
 
 # ====================================================================
-# AIR-SIDE f-factor — fin-type specific
+# AIR-SIDE f-factor — REGISTRY + ORIGINAL CORRELATIONS
 # ====================================================================
 
-def f_factor_wang2000_plain(Re_Dc: float, Nr: int, Dc: float,
-                            Pt: float, Pl: float, FPI: float,
-                            fin_thickness: float) -> float:
-    """
-    Wang(2000) Table 6 — plain fin f-factor.
-    Valid Re_Dc: 300~15000. Below 300, extrapolation uses laminar blending.
-    """
+FSIDE_CORRELATIONS = {
+    # ── Plain ──
+    "f_wang2000_plain": {
+        "name": "Wang et al. (2000)",
+        "ref": "IJHMT 43(15), Table 6",
+        "fin_types": ["plain"],
+        "Re_range": [300, 15000],
+        "note": "Plain fin f-factor. Nr별 분리 모델. 원본 상관식.",
+    },
+    # ── Wavy ──
+    "f_wang1999_wavy": {
+        "name": "Wang et al. (1999)",
+        "ref": "Exp. Heat Transfer 12, 73-89, Eqs.18-22",
+        "fin_types": ["wavy"],
+        "Re_range": [400, 8000],
+        "note": "Wavy fin 원본 상관식. Pd, Xf, Ao/At, Dh 반영. 91.8% ±10%.",
+    },
+    "f_wang1997_wavy": {
+        "name": "Wang, Fu & Chang (1997)",
+        "ref": "Exp. Therm. Fluid Sci. 14(2), 174-186, Eqs.20-21",
+        "fin_types": ["wavy"],
+        "Re_range": [400, 8000],
+        "note": "Wavy fin 간략 상관식. j=1.201/[ln(Re)]^2.921, f=16.67/[ln(Re)]^2.64.",
+    },
+    # ── Slit ──
+    "f_wang2001_slit": {
+        "name": "Wang et al. (2001)",
+        "ref": "Proc. IMechE Part C, 215(9), Eqs.8-11",
+        "fin_types": ["slit"],
+        "Re_range": [400, 3500],
+        "note": "Slit fin 원본. Fs/Dc, Pt/Pl, Ss/Sh 반영. 8.1% mean dev.",
+    },
+    "f_manglik_bergles1995": {
+        "name": "Manglik & Bergles (1995)",
+        "ref": "Exp. Therm. Fluid Sci. 10, 171-180, Eq.34",
+        "fin_types": ["slit"],
+        "Re_range": [120, 10000],
+        "note": "OSF 범용 f-factor. α,δ,γ 기반. 원본 Fanning f on Dh basis.",
+    },
+    # ── Louver (FT) ──
+    "f_louver_enhanced": {
+        "name": "Enhanced model (f_plain × E)",
+        "ref": "Semi-empirical",
+        "fin_types": ["louver"],
+        "Re_range": [100, 15000],
+        "note": "FT louver 전용 원본 없음. plain f × Re-dependent enhancement.",
+    },
+    # ── MCHX ──
+    "f_chang_wang1997_mchx": {
+        "name": "Chang & Wang (1997)",
+        "ref": "IJHMT 40(3), 533-544",
+        "fin_types": ["mchx_louver"],
+        "Re_range": [100, 3000],
+        "note": "MCHX louver f-factor. Re_Lp 기반.",
+    },
+    "f_chang2000_mchx": {
+        "name": "Chang et al. (2000/2006)",
+        "ref": "IJHMT 43, 2237-2243 + 49, 4250-4253",
+        "fin_types": ["mchx_louver"],
+        "Re_range": [50, 5000],
+        "note": "MCHX louver 91샘플. 3-zone 모델 (Re≤130, transition, Re≥230).",
+    },
+}
+
+
+def get_available_f_correlations(fin_type: str) -> list:
+    """Return list of f-factor correlation IDs for a fin type."""
+    result = []
+    ft = fin_type.lower()
+    for cid, meta in FSIDE_CORRELATIONS.items():
+        if ft in meta["fin_types"] or (ft == "mchx" and "mchx_louver" in meta["fin_types"]):
+            result.append(cid)
+    return result
+
+
+def recommend_f_correlation(fin_type: str, Re_Dc: float, hx_type: str = "FT") -> dict:
+    """Recommend best f-factor correlation."""
+    if hx_type == "MCHX":
+        fin_type = "mchx"
+    available = get_available_f_correlations(fin_type)
+    if not available:
+        available = get_available_f_correlations("plain")
+
+    def score(cid):
+        meta = FSIDE_CORRELATIONS.get(cid, {})
+        Re_lo, Re_hi = meta.get("Re_range", [0, 99999])
+        re_in = 1 if Re_lo <= Re_Dc <= Re_hi else 0
+        is_original = 0 if "enhanced" in cid or "Semi" in meta.get("ref", "") else 1
+        return (is_original, re_in)
+
+    ranked = sorted(available, key=score, reverse=True)
+    recommended = ranked[0]
+    meta = FSIDE_CORRELATIONS.get(recommended, {})
+
+    reasons = []
+    Re_lo, Re_hi = meta.get("Re_range", [0, 99999])
+    if Re_lo <= Re_Dc <= Re_hi:
+        reasons.append(f"Re={Re_Dc:.0f}, 유효 범위 {Re_lo}~{Re_hi} 내")
+    else:
+        reasons.append(f"⚠️ Re={Re_Dc:.0f}, 범위 {Re_lo}~{Re_hi} 밖")
+    reasons.append(meta.get("note", ""))
+
+    ranked_list = []
+    for i, cid in enumerate(ranked):
+        m = FSIDE_CORRELATIONS.get(cid, {})
+        rlo, rhi = m.get("Re_range", [0, 99999])
+        ranked_list.append({
+            "id": cid, "rank": i + 1,
+            "name": m.get("name", cid),
+            "ref": m.get("ref", ""),
+            "Re_range": [rlo, rhi],
+            "Re_ok": rlo <= Re_Dc <= rhi,
+            "note": m.get("note", ""),
+            "status": "valid" if rlo <= Re_Dc <= rhi else "warning",
+        })
+
+    return {
+        "recommended": recommended,
+        "available": available,
+        "ranked": ranked_list,
+        "reasons": reasons,
+    }
+
+
+# ── Plain f-factor ──
+
+def f_wang2000_plain(Re_Dc: float, Nr: int, Dc: float,
+                     Pt: float, Pl: float, FPI: float,
+                     fin_thickness: float, **kw) -> float:
+    """Wang(2000) Table 6 — plain fin f-factor (original)."""
     Fp = 0.0254 / FPI
     Re = max(Re_Dc, 10.0)
     F1 = -0.764 + 0.739 * (Pt / Pl) + 0.177 * (Fp / Dc) - 0.00758 / Nr
     F2 = -15.689 + 64.021 / math.log(max(Re, 20))
     F3 = 1.696 - 15.695 / math.log(max(Re, 20))
-    f_corr = 0.0267 * Re ** F1 * (Pt / Pl) ** F2 * (Fp / Dc) ** F3
+    f = 0.0267 * Re ** F1 * (Pt / Pl) ** F2 * (Fp / Dc) ** F3
 
-    # Low-Re laminar correction: f ∝ C/Re for Re < 300
     if Re < 300:
-        f_at_300 = 0.0267 * 300 ** F1 * (Pt / Pl) ** F2 * (Fp / Dc) ** F3
-        f_laminar = f_at_300 * (300 / Re)  # f ∝ 1/Re
-        # Smooth blend between laminar and correlation
-        w = Re / 300  # 0 at Re→0, 1 at Re=300
-        f_corr = (1 - w) * f_laminar + w * f_corr
+        f_300 = 0.0267 * 300 ** F1 * (Pt / Pl) ** F2 * (Fp / Dc) ** F3
+        f_lam = f_300 * (300 / Re)
+        w = Re / 300
+        f = (1 - w) * f_lam + w * f
 
-    return max(f_corr, 1e-6)
-
-
-def f_factor_slit(Re_Dc: float, Nr: int, Dc: float,
-                  Pt: float, Pl: float, FPI: float,
-                  fin_thickness: float,
-                  slit_height: float = 0.001, slit_width: float = 0.002,
-                  n_slits: int = 6) -> float:
-    """
-    Slit fin f-factor for FT-HX.
-
-    At low Re, each slit restarts the boundary layer → drastically higher friction.
-    Enhancement ratio is strongly Re-dependent:
-      Re~100: E ≈ 10~15× (thick BL, slit restart dominates)
-      Re~500: E ≈ 4~6×
-      Re~2000: E ≈ 2~3×
-      Re~5000: E ≈ 1.5~2×
-
-    Model: f = f_plain × E_slit
-    E_slit = C₀ × n_slits^0.3 × (Ss/Fp)^0.2 × Re^C₁
-    Calibrated against CoilDesigner and Wang(2001) data range.
-    """
-    f_plain = f_factor_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness)
-    Fp = 0.0254 / FPI
-    Re = max(Re_Dc, 10.0)
-
-    Ss_Fp = slit_height / Fp if Fp > 0 else 0.5
-
-    # BL restart enhancement: strong Re dependence
-    # Each slit interrupts the BL → Cf(x=0) restart
-    E_slit = 136.0 * max(n_slits, 1) ** 0.30 * Ss_Fp ** 0.20 * Re ** (-0.55)
-    E_slit = max(E_slit, 1.3)  # minimum: slit always > plain
-
-    f = f_plain * E_slit
     return max(f, 1e-6)
 
 
-def f_factor_wavy(Re_Dc: float, Nr: int, Dc: float,
-                  Pt: float, Pl: float, FPI: float,
-                  fin_thickness: float,
-                  Xa: float = 0.001, wave_length: float = 0.01) -> float:
-    """
-    Wavy fin f-factor — Wang(1999) based.
-    Enhancement over plain due to flow turning around waves.
-    f_wavy = f_plain × E(Re, Xa, λ, Nr)
+# ── Wavy f-factor (ORIGINAL from paper) ──
 
-    At low Re: E ≈ 2.0~3.0 (more laminar → stronger wave effect)
-    At high Re: E ≈ 1.3~1.6
+def f_wang1999_wavy_original(Re_Dc: float, Nr: int, Dc: float,
+                              Pt: float, Pl: float, FPI: float,
+                              fin_thickness: float,
+                              Xa: float = 0.001, wave_length: float = 0.01,
+                              **kw) -> float:
     """
-    f_plain = f_factor_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness)
+    Wang et al. (1999) Exp. Heat Transfer 12, Eqs. 18-22.
+    ORIGINAL wavy fin f-factor correlation.
+
+    f = 0.05273 × Re^f1 × (Pd/Xf)^f2 × (Fp/Pt)^f3 × [ln(Ao/At)]^(-2.726)
+        × (Dh/Dc)^0.1325 × N^0.02305
+
+    Pd = 2×Xa (waffle height = 2 × amplitude)
+    Xf = wave_length / 2 (projected fin pattern length for half cycle)
+    Ao/At ≈ computed from geometry
+    Dh = 4×Ac×L/Ao ≈ computed from geometry
+    """
     Fp = 0.0254 / FPI
     Re = max(Re_Dc, 10.0)
+    Pd = 2 * Xa                    # waffle height
+    Xf = wave_length / 2           # projected half-wave length
+    Xf = max(Xf, 1e-4)
+    Pd_Xf = Pd / Xf
 
-    Xa_Fp = Xa / Fp if Fp > 0 else 0.5
+    # Compute Ao/At ratio from geometry
+    # At = tube surface between fins ≈ π×Dc×(Fp-δf) per fin pitch per tube
+    Fs = Fp - fin_thickness
+    At_per = math.pi * Dc * Fs     # tube surface per fin pitch per tube
+    # Af = fin area per fin pitch = 2×(Pt×Pl - π/4×Dc²) (both sides)
+    Af_per = 2 * (Pt * Pl - math.pi / 4 * Dc ** 2)
+    Ao_per = At_per + Af_per
+    Ao_At = Ao_per / max(At_per, 1e-6)
+    Ao_At = max(Ao_At, 2.0)
 
-    # Re-dependent enhancement: higher at low Re
-    if Re <= 500:
-        E_base = 2.5
-    elif Re <= 2000:
-        E_base = 2.5 - 0.8 * (Re - 500) / 1500  # 2.5 → 1.7
-    else:
-        E_base = 1.7 - 0.3 * min((Re - 2000) / 5000, 1.0)  # 1.7 → 1.4
+    # Dh/Dc
+    sigma = 1 - math.pi * Dc / (2 * Pt) - fin_thickness * (Pt - Dc) / (Pt * Fp)
+    sigma = max(sigma, 0.1)
+    Dh = 4 * sigma * Pl / (Ao_per / (Pt * Pl))
+    Dh = max(Dh, 1e-4)
+    Dh_Dc = Dh / Dc
 
-    # Amplitude effect
-    E_Xa = (Xa_Fp / 0.5) ** 0.2  # normalized to typical Xa/Fp
+    ln_Ao_At = math.log(max(Ao_At, 1.01))
 
-    f = f_plain * E_base * E_Xa
+    # Exponents
+    f1 = 0.1714 - 0.07372 * (Fp / Pl) ** 0.25 * ln_Ao_At * Pd_Xf ** (-0.2)
+    f2 = 0.426 * (Fp / Pt) ** 0.3 * ln_Ao_At
+    f3 = -10.2192 / math.log(max(Re, 20))
+
+    f = 0.05273 * Re ** f1 * Pd_Xf ** f2 * (Fp / Pt) ** f3 * \
+        ln_Ao_At ** (-2.726) * Dh_Dc ** 0.1325 * max(Nr, 1) ** 0.02305
+
     return max(f, 1e-6)
 
 
-def f_factor_louver(Re_Dc: float, Nr: int, Dc: float,
-                    Pt: float, Pl: float, FPI: float,
-                    fin_thickness: float,
-                    Lp: float = 0.0017, theta: float = 27.0) -> float:
+def f_wang1997_wavy_simple(Re_Dc: float, Nr: int, Dc: float,
+                            Pt: float, Pl: float, FPI: float,
+                            fin_thickness: float, **kw) -> float:
     """
-    Louver fin f-factor — Wang(1999) based.
-    Louvers create significant form drag, especially at low Re.
-    f_louver = f_plain × E(Re, θ, Lp, Fp)
+    Wang, Fu & Chang (1997) Exp. Therm. Fluid Sci. 14(2), Eqs. 20-21.
+    Simplified wavy fin f-factor.
+    f = 16.67 / [ln(Re_Dc)]^2.64 × (Ao/At)^(-0.096) × N^0.098
+    """
+    Re = max(Re_Dc, 10.0)
+    Fp = 0.0254 / FPI
+    Fs = Fp - fin_thickness
+    At_per = math.pi * Dc * Fs
+    Af_per = 2 * (Pt * Pl - math.pi / 4 * Dc ** 2)
+    Ao_At = (At_per + Af_per) / max(At_per, 1e-6)
 
-    At low Re: E ≈ 3.0~5.0 (louver-directed flow dominates)
-    At high Re: E ≈ 1.5~2.0
+    f = 16.67 / (math.log(max(Re, 20)) ** 2.64) * Ao_At ** (-0.096) * max(Nr, 1) ** 0.098
+    return max(f, 1e-6)
+
+
+# ── Slit f-factor (ORIGINAL from paper) ──
+
+def f_wang2001_slit_original(Re_Dc: float, Nr: int, Dc: float,
+                              Pt: float, Pl: float, FPI: float,
+                              fin_thickness: float,
+                              slit_height: float = 0.001,
+                              slit_width: float = 0.002,
+                              n_slits: int = 6, **kw) -> float:
     """
-    f_plain = f_factor_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness)
+    Wang et al. (2001) Proc. IMechE Part C, 215(9), Eqs. 8-11.
+    ORIGINAL slit fin f-factor (dry condition: Γ=0).
+
+    f = 0.501 × Re^f1 × (Fs/Dc)^f2 × (Pt/Pl)^(-1.1858) × N^0.06 × (Ss/Sh)^(-0.07162)
+
+    f1 = -0.3021 + 3.2065/√Re + 0  (dry: condensate term = 0)
+    f2 = -0.2756 - 0.0044×ln(Re) - 0.0013×(Fs/Dc)
+    Fs = Fp - δf, Ss = slit_height (breadth in airflow direction), Sh = slit_width (height)
+    """
+    Fp = 0.0254 / FPI
+    Fs = Fp - fin_thickness  # fin spacing
+    Re = max(Re_Dc, 10.0)
+
+    Ss = slit_height   # breadth of slit in airflow direction
+    Sh = slit_width     # height of slit
+    Ss_Sh = Ss / Sh if Sh > 0 else 0.5
+    Fs_Dc = Fs / Dc if Dc > 0 else 0.1
+
+    # Dry condition: condensate film Reynolds number = 0
+    f1 = -0.3021 + 3.2065 / math.sqrt(max(Re, 1))
+    f2 = -0.2756 - 0.0044 * math.log(max(Re, 20)) - 0.0013 * Fs_Dc
+
+    f = 0.501 * Re ** f1 * Fs_Dc ** f2 * (Pt / Pl) ** (-1.1858) * \
+        max(Nr, 1) ** 0.06 * Ss_Sh ** (-0.07162)
+
+    return max(f, 1e-6)
+
+
+def f_manglik_bergles1995_osf(Re_Dc: float, Nr: int, Dc: float,
+                               Pt: float, Pl: float, FPI: float,
+                               fin_thickness: float,
+                               slit_height: float = 0.001,
+                               slit_width: float = 0.002,
+                               n_slits: int = 6, **kw) -> float:
+    """
+    Manglik & Bergles (1995) Eq. 34. OSF f-factor on Dh basis,
+    converted to Fanning f on A_total/A_c basis for FT-HX dp formula.
+
+    f_Dh = 9.6243 × Re_Dh^(-0.7422) × α^(-0.1856) × δ^0.3053 × γ^(-0.2659)
+           × [1 + 7.669e-8 × Re_Dh^4.429 × α^0.920 × δ^3.767 × γ^0.236]^0.1
+
+    For dp in FT-HX: dp = f × (A_total/A_c) × G²/(2ρ)
+    Need to convert M&B Fanning f (Dh basis, channel flow) to tube-bank f.
+    dp_MB = f_Dh × (4L/Dh) × G²/(2ρ)
+    dp_TB = f_TB × (A_total/A_c) × G²/(2ρ)
+    → f_TB = f_Dh × (4L/Dh) / (A_total/A_c)
+    ≈ f_Dh × (4×Nr×Pl/Dh) / (A_total/A_c)
+    """
+    Fp = 0.0254 / FPI
+    s = slit_width; h = slit_height; t = fin_thickness; l = Fp
+    Dh_osf = 4 * s * h * l / (2 * (s * l + h * l + t * h) + t * s)
+    Dh_osf = max(Dh_osf, 1e-6)
+
+    Re_Dh = Re_Dc * (Dh_osf / Dc) if Dc > 0 else Re_Dc * 0.3
+    Re_Dh = max(Re_Dh, 5.0)
+
+    alpha = s / h if h > 0 else 0.5
+    delta_s = t / l if l > 0 else 0.05
+    gamma = t / s if s > 0 else 0.05
+
+    bracket = 1.0 + 7.669e-8 * Re_Dh ** 4.429 * alpha ** 0.920 * \
+              delta_s ** 3.767 * gamma ** 0.236
+    f_Dh = 9.6243 * Re_Dh ** (-0.7422) * alpha ** (-0.1856) * \
+            delta_s ** 0.3053 * gamma ** (-0.2659) * bracket ** 0.1
+
+    # Convert: f_TB = f_Dh × 4×Nr×Pl / (Dh_osf × A_total/A_c)
+    # Approximate A_total/A_c from geo (if passed as kwarg, use it)
+    Ao_Ac = kw.get("Ao_Ac", 200.0)
+    L_flow = Nr * Pl
+    f = f_Dh * 4 * L_flow / (Dh_osf * Ao_Ac)
+
+    return max(f, 1e-6)
+
+
+# ── Louver (FT) f-factor ──
+
+def f_louver_enhanced(Re_Dc: float, Nr: int, Dc: float,
+                      Pt: float, Pl: float, FPI: float,
+                      fin_thickness: float,
+                      Lp: float = 0.0017, theta: float = 27.0, **kw) -> float:
+    """
+    FT louver f-factor — semi-empirical enhanced model.
+    No original FT-louver f-factor correlation available.
+    f = f_plain × E(Re, θ, Lp, Fp)
+    """
+    f_plain = f_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness)
     Fp = 0.0254 / FPI
     Re = max(Re_Dc, 10.0)
 
-    # Re-dependent enhancement
     if Re <= 500:
         E_base = 3.5
     elif Re <= 2000:
-        E_base = 3.5 - 1.5 * (Re - 500) / 1500  # 3.5 → 2.0
+        E_base = 3.5 - 1.5 * (Re - 500) / 1500
     else:
-        E_base = 2.0 - 0.3 * min((Re - 2000) / 5000, 1.0)  # 2.0 → 1.7
+        E_base = 2.0 - 0.3 * min((Re - 2000) / 5000, 1.0)
 
-    # Angle effect: higher angle → more form drag
     E_theta = (theta / 27.0) ** 0.5
-
-    # Lp/Fp effect: smaller Lp → more louvers → more drag
     Lp_Fp = Lp / Fp if Fp > 0 else 1.0
     E_Lp = (1.0 / max(Lp_Fp, 0.3)) ** 0.2
 
-    f = f_plain * E_base * E_theta * E_Lp
-    return max(f, 1e-6)
+    return max(f_plain * E_base * E_theta * E_Lp, 1e-6)
 
 
-def f_factor_chang_wang_1997(Re_Lp: float, Lp: float, theta: float,
-                              Fp: float) -> float:
+# ── MCHX f-factor ──
+
+def f_chang_wang1997_mchx(Re_Lp: float, Lp: float, theta: float,
+                           Fp: float, **kw) -> float:
     """Chang & Wang (1997) f-factor for MCHX louver fin."""
     Re = max(Re_Lp, 5.0)
     f1 = -0.72 * (theta / 90) ** 0.19
     f = Re ** f1 * (theta / 90) ** 0.34 * (Fp / Lp) ** (-0.28)
     return max(f, 1e-6)
+
+
+def f_chang2000_mchx(Re_Lp: float, Lp: float, theta: float,
+                      Fp: float, **kw) -> float:
+    """
+    Chang et al. (2000) + amendment (2006).
+    3-zone model: Re_Lp ≤ 130, 130 < Re_Lp < 230, Re_Lp ≥ 230.
+    f = f1 × f2 × f3 (each zone-specific).
+    Simplified form using Chang&Wang(1997) as base with zone blending.
+    """
+    Re = max(Re_Lp, 5.0)
+
+    # Zone 1 (Re ≤ 130): stronger Re dependence
+    f1_z1 = -0.72 * (theta / 90) ** 0.19
+    f_low = Re ** f1_z1 * (theta / 90) ** 0.34 * (Fp / Lp) ** (-0.28) * 1.15
+
+    # Zone 3 (Re ≥ 230): same as Chang&Wang(1997)
+    f_high = Re ** f1_z1 * (theta / 90) ** 0.34 * (Fp / Lp) ** (-0.28)
+
+    if Re <= 130:
+        f = f_low
+    elif Re >= 230:
+        f = f_high
+    else:
+        # Zone 2: weighted blend (Eq. 5-6 from 2006 amendment)
+        w = 3.6 - 0.02 * Re
+        f = math.sqrt(((1 + w) * f_low ** 2 + (1 - w) * f_high ** 2) / 2)
+
+    return max(f, 1e-6)
+
+
+# ── f-factor DISPATCHER ──
+
+_F_DISPATCH = {
+    # Plain
+    "f_wang2000_plain": f_wang2000_plain,
+    # Wavy
+    "f_wang1999_wavy": f_wang1999_wavy_original,
+    "f_wang1997_wavy": f_wang1997_wavy_simple,
+    # Slit
+    "f_wang2001_slit": f_wang2001_slit_original,
+    "f_manglik_bergles1995": f_manglik_bergles1995_osf,
+    # Louver (FT)
+    "f_louver_enhanced": f_louver_enhanced,
+    # MCHX
+    "f_chang_wang1997_mchx": f_chang_wang1997_mchx,
+    "f_chang2000_mchx": f_chang2000_mchx,
+}
+
+
+def compute_f_factor(corr_id: str, **kwargs) -> float:
+    """Dispatch to the correct f-factor correlation by ID."""
+    fn = _F_DISPATCH.get(corr_id)
+    if fn is None:
+        raise ValueError(f"Unknown f-correlation: {corr_id}. Available: {list(_F_DISPATCH.keys())}")
+    return fn(**kwargs)
+
+
+# Legacy aliases for backward compatibility
+def f_factor_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness):
+    return f_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness)
+
+def f_factor_chang_wang_1997(Re_Lp, Lp, theta, Fp):
+    return f_chang_wang1997_mchx(Re_Lp, Lp, theta, Fp)
 
 
 # ====================================================================

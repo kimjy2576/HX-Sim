@@ -26,13 +26,13 @@ const {useState, useCallback, useEffect} = React;
 const API_URL = window.location.origin;
 
 const DEFAULT_FT = {
-  W:0.5,H:0.3,D:0.08,Do:0.00952,Di:0.00822,Pt:0.0254,Pl:0.022,
-  Nr:4,Nt:12,layout:"staggered",FPI:14,fin_thickness:0.00012,
-  fin_type:"plain",k_fin:200,
+  W:0.241,H:0.566,D:0.06,Do:0.005,Di:0.00442,Pt:0.0141,Pl:0.010,
+  Nr:6,Nt:4,layout:"staggered",FPI:22,fin_thickness:0.00012,
+  fin_type:"slit",k_fin:200,
   wavy_amplitude:0.001,wavy_wavelength:0.01,
   louver_pitch:0.0017,louver_angle:27,
-  slit_height:0.001,slit_width:0.002,n_slits:6,
-  N_seg:5
+  slit_height:0.001,slit_width:0.007,n_slits:4,
+  N_seg:10
 };
 const DEFAULT_MCHX = {
   W:0.6,H:0.4,D:0.02,n_slabs:1,ch_width:0.001,ch_height:0.0015,
@@ -146,13 +146,14 @@ function Metric({label,value,unit,color=C.accent}) {
 /* ===== Main App ===== */
 function App() {
   const [hxType,setHxType]=useState("FT");
-  const [mode,setMode]=useState("evap");
-  const [airIn,setAirIn]=useState({T:35,RH:0.5,flowMode:"velocity",V:2.0,CMM:null});
-  const [refIn,setRefIn]=useState({fluid:"R410A",stateMode:"T",T_sat:7,P_sat:null,m_ref:0.02,massUnit:"kg/s",twoPhase:true,x_in:0.2,T_ref_in:null});
+  const [mode,setMode]=useState("cond");
+  const [airIn,setAirIn]=useState({T:35,RH:0.98,flowMode:"CMM",V:2.0,CMM:2.6});
+  const [refIn,setRefIn]=useState({fluid:"R290",stateMode:"P",T_sat:null,P_sat:2811,m_ref:16.5,massUnit:"kg/hr",twoPhase:false,x_in:0.2,T_ref_in:92.6});
   const [flow,setFlow]=useState("counter");
   const [ftSpec,setFtSpec]=useState({...DEFAULT_FT});
   const [mchxSpec,setMchxSpec]=useState({...DEFAULT_MCHX});
   const [airCorr,setAirCorr]=useState({mode:"auto",selected:null});
+  const [fCorr,setFCorr]=useState({mode:"auto",selected:null});
   const [result,setResult]=useState(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -177,6 +178,7 @@ function App() {
         two_phase_inlet:refIn.twoPhase,x_in:refIn.x_in};
       if(airIn.flowMode==="velocity") body.V_air=airIn.V; else body.CMM=airIn.CMM||18;
       if(airCorr.mode==="manual"&&airCorr.selected) body.air_j_corr=airCorr.selected;
+      if(fCorr.mode==="manual"&&fCorr.selected) body.air_f_corr=fCorr.selected;
       if(refIn.stateMode==="T") body.T_sat_C=refIn.T_sat; else body.P_sat_kPa=refIn.P_sat;
       if(!refIn.twoPhase&&refIn.T_ref_in!==null) body.T_ref_in_C=refIn.T_ref_in;
       if(hxType==="FT") body.ft_spec=ftSpec; else body.mchx_spec=mchxSpec;
@@ -184,7 +186,7 @@ function App() {
       if(!res.ok){const e=await res.json();throw new Error(e.detail||"Failed");}
       setResult(await res.json());setTab("overview");
     }catch(e){setError(e.message);}finally{setLoading(false);}
-  },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr]);
+  },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr,fCorr]);
 
   const segData=result?.segments?.filter(s=>s.tube===0)?.map(s=>({
     name:`R${s.row}S${s.seg}`,Q:s.Q,T_wall:s.T_wall,h_i:s.h_i,x:s.x_ref,eta_o:s.eta_o
@@ -333,7 +335,7 @@ function App() {
               <Field label="Column" unit="단" value={ftSpec.Nt} onChange={v=>uF("Nt",parseInt(v)||1)}/>
               <Field label="FPI" unit="fins/in" value={ftSpec.FPI} onChange={v=>uF("FPI",v)}/>
               <Field label="Fin" options={["plain","wavy","louver","slit"]} value={ftSpec.fin_type}
-                onChange={v=>{uF("fin_type",v);setAirCorr(p=>({...p,selected:null}));}}/>
+                onChange={v=>{uF("fin_type",v);setAirCorr(p=>({...p,selected:null}));setFCorr(p=>({...p,selected:null}));}}/>
               {/* Correlation Mode: Auto / Manual */}
               <div style={{marginBottom:6}}>
                 <div style={{fontSize:10,color:C.dim,marginBottom:3}}>Air-side j Correlation</div>
@@ -431,6 +433,72 @@ function App() {
                     )}
                   </div>
                 );
+              })()}
+              {/* === f-factor Correlation Mode: Auto / Manual === */}
+              <div style={{marginBottom:6}}>
+                <div style={{fontSize:10,color:C.dim,marginBottom:3}}>Air-side f Correlation (dp)</div>
+                <div style={{display:"flex",gap:4}}>
+                  {["auto","manual"].map(m=>(
+                    <button key={m} onClick={()=>setFCorr(p=>({...p,mode:m,selected:m==="auto"?null:p.selected}))} style={{
+                      flex:1,padding:"5px 0",borderRadius:6,border:"none",cursor:"pointer",
+                      fontWeight:700,fontSize:10,fontFamily:"inherit",
+                      background:fCorr.mode===m?(m==="auto"?C.accent:C.accent2):C.bg,
+                      color:fCorr.mode===m?C.bg:C.dim}}>
+                      {m==="auto"?"⚡ Auto":"🔧 Manual"}</button>
+                  ))}
+                </div>
+              </div>
+              {/* f-factor Manual mode: ranked list */}
+              {fCorr.mode==="manual"&&(()=>{
+                const ranked = result?.f_recommendation?.ranked;
+                if(!ranked || ranked.length===0) return (
+                  <div style={{fontSize:10,color:C.warn,padding:"8px",marginBottom:8,
+                    background:`${C.warn}11`,border:`1px solid ${C.warn}33`,borderRadius:6}}>
+                    🔄 <b>RUN</b>을 클릭하면 f-factor 추천 목록이 표시됩니다
+                  </div>
+                );
+                return (
+                  <div style={{marginBottom:8}}>
+                    {ranked.map(r=>{
+                      const sel = fCorr.selected===r.id;
+                      const clr = r.Re_ok?C.success:C.warn;
+                      const icon = r.Re_ok?"✅":"⚠️";
+                      return (
+                        <div key={r.id} onClick={()=>setFCorr(p=>({...p,selected:r.id}))}
+                          style={{padding:"6px 8px",marginBottom:3,borderRadius:6,cursor:"pointer",
+                            border:`1px solid ${sel?clr:C.border}`,
+                            background:sel?`${clr}15`:C.bg,
+                            transition:"all 0.15s"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{fontSize:10}}>{icon}</span>
+                            <span style={{fontSize:11,fontWeight:sel?700:400,color:sel?C.text:C.dim,flex:1}}>
+                              {r.name}
+                            </span>
+                          </div>
+                          <div style={{fontSize:9,color:C.dim,marginTop:2}}>
+                            {r.ref} · Re {r.Re_range[0]}~{r.Re_range[1]}
+                            {!r.Re_ok&&<span style={{color:C.warn}}> (범위 밖)</span>}
+                          </div>
+                          {sel&&r.note&&<div style={{fontSize:9,color:C.dim,marginTop:2,fontStyle:"italic"}}>{r.note}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+              {/* f-factor Auto mode: show after simulation */}
+              {fCorr.mode==="auto"&&result?.f_recommendation&&(()=>{
+                const fRec = result.f_recommendation;
+                const usedF = result.correlations_used?.air_f;
+                const fInfo = fRec.ranked?.find(r=>r.id===usedF);
+                return usedF?(
+                  <div style={{fontSize:10,padding:"6px 8px",marginBottom:8,borderRadius:6,
+                    background:`${C.success}11`,border:`1px solid ${C.success}33`}}>
+                    <span style={{fontWeight:700,color:C.accent}}>⚡ f:</span>{" "}
+                    <span style={{color:C.text,fontWeight:600}}>{fInfo?.name||usedF}</span>
+                    <span style={{fontSize:9,color:C.dim}}> · f={result.correlations_used?.f_value}</span>
+                  </div>
+                ):null;
               })()}
               {/* Fin-type specific parameters */}
               {ftSpec.fin_type==="wavy"&&(<>
@@ -646,6 +714,24 @@ function App() {
                         {info?.note&&<div style={{fontSize:9,color:C.dim,marginTop:3,fontStyle:"italic"}}>{info.note}</div>}
                       </div>
                     );
+                  })()}
+                  {/* f-factor selection info */}
+                  {(()=>{
+                    const fRec = result.f_recommendation;
+                    if(!fRec) return null;
+                    const usedF = result.correlations_used?.air_f;
+                    const fInfo = fRec.ranked?.find(r=>r.id===usedF);
+                    const fVal = result.correlations_used?.f_value;
+                    const isAutoF = fCorr.mode==="auto";
+                    return usedF?(
+                      <div style={{padding:"8px 10px",borderRadius:6,marginTop:6,background:`${C.accent2}11`,border:`1px solid ${C.accent2}22`}}>
+                        <div style={{fontSize:10,fontWeight:700,color:C.accent2,marginBottom:2}}>
+                          {isAutoF?"⚡":"🔧"} f-factor: {fInfo?.name||usedF}
+                          <span style={{fontWeight:400,color:C.dim}}> — f = {fVal}</span>
+                        </div>
+                        {fInfo?.note&&<div style={{fontSize:9,color:C.dim,fontStyle:"italic"}}>{fInfo.note}</div>}
+                      </div>
+                    ):null;
                   })()}
                 </div>
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}>

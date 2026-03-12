@@ -17,6 +17,8 @@ from models.correlations import (
     AIRSIDE_CORRELATIONS, get_available_correlations,
     recommend_correlation, select_correlations,
     validate_correlation, build_spec_values, build_mchx_spec_values,
+    FSIDE_CORRELATIONS, get_available_f_correlations,
+    recommend_f_correlation,
 )
 
 app = FastAPI(
@@ -114,6 +116,7 @@ class SimRequest(BaseModel):
 
     # Correlation selection (None = auto-recommend)
     air_j_corr: Optional[str] = Field(None, description="Air-side j-factor correlation ID. None = auto.")
+    air_f_corr: Optional[str] = Field(None, description="Air-side f-factor correlation ID. None = auto.")
 
     # Geometry
     ft_spec: Optional[FTSpecInput] = None
@@ -157,6 +160,7 @@ class SimResponse(BaseModel):
     row_Q: List[float]
     correlations_used: Dict
     correlation_recommendation: Dict = {}
+    f_recommendation: Dict = {}
     segments: List[SegmentOut]
     error: str = ""
 
@@ -337,16 +341,28 @@ def simulate(req: SimRequest):
 
         rec = recommend_correlation(fin_type, Re_Dc_val, Nr, req.hx_type, spec_vals)
 
+        # f-factor recommendation
+        f_fin_type = fin_type if req.hx_type == "FT" else "mchx"
+        f_rec = recommend_f_correlation(f_fin_type, Re_Dc_val, req.hx_type)
+
         # Apply user-selected or recommended correlation
         solver = HXSolver(sim_input)
+
+        # j-factor selection
         if req.air_j_corr:
             solver.corr["air_j"] = req.air_j_corr
-            # Validate user's choice too
             user_val = validate_correlation(req.air_j_corr, spec_vals)
             rec["user_selected"] = req.air_j_corr
             rec["user_validation"] = user_val
         else:
             solver.corr["air_j"] = rec["recommended"]
+
+        # f-factor selection
+        if req.air_f_corr:
+            solver._f_corr_id = req.air_f_corr
+            f_rec["user_selected"] = req.air_f_corr
+        else:
+            solver._f_corr_id = f_rec["recommended"]
 
         result = solver.solve()
 
@@ -389,6 +405,7 @@ def simulate(req: SimRequest):
             row_Q=[round(q, 1) for q in result.row_Q],
             correlations_used=result.correlations_used,
             correlation_recommendation=rec,
+            f_recommendation=f_rec,
             segments=seg_out,
             error=result.error,
         )
@@ -399,10 +416,19 @@ def simulate(req: SimRequest):
 
 @app.get("/correlations")
 def get_correlations(fin_type: str = "plain"):
-    """Get available correlations and metadata for a fin type."""
+    """Get available j-factor correlations and metadata for a fin type."""
     available = get_available_correlations(fin_type)
     details = {cid: AIRSIDE_CORRELATIONS[cid] for cid in available if cid in AIRSIDE_CORRELATIONS}
     return {"fin_type": fin_type, "available": available, "details": details}
+
+
+@app.get("/f_correlations")
+def get_f_correlations(fin_type: str = "plain", hx_type: str = "FT"):
+    """Get available f-factor correlations and metadata for a fin type."""
+    ft = fin_type if hx_type == "FT" else "mchx"
+    available = get_available_f_correlations(ft)
+    details = {cid: FSIDE_CORRELATIONS[cid] for cid in available if cid in FSIDE_CORRELATIONS}
+    return {"fin_type": fin_type, "hx_type": hx_type, "available": available, "details": details}
 
 
 if __name__ == "__main__":
