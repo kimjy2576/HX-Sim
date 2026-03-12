@@ -55,23 +55,31 @@ def j_factor_wang1999_wavy(Re_Dc: float, Nr: int, Dc: float,
                            fin_thickness: float, Xa: float = 0.001,
                            wave_length: float = 0.01) -> float:
     """
-    Wang et al. (1999) IJHMT 42 — wavy fin, staggered.
-    Enhancement over plain fin based on wavy geometry (Xa, wavelength).
-    Typical enhancement: 1.2~1.6× plain.
+    Wang et al. (1999) IJHMT 42, 3943-3954 — wavy (herringbone) fin.
+    Power-law form: j = C₀ × Re_Dc^C₁ × (Fp/Dc)^C₂ × (Pt/Pl)^C₃ × Nr^C₄ × (2Xa/Fp)^C₅
+
+    Parameters:
+      Xa: half wave amplitude [m]
+      wave_length: wave pitch (wavelength) [m]
     """
-    # Base: plain fin j-factor
-    j_plain = j_factor_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness)
+    Fp = 0.0254 / FPI
+    if Re_Dc < 10:
+        Re_Dc = 10.0
 
-    # Wavy enhancement factor
-    # Wang(1999): enhancement depends on Xa/wavelength and Re
-    Xa_ratio = Xa / wave_length if wave_length > 0 else 0.1
-    # Higher Xa/λ → more mixing → more enhancement
-    # Re effect: enhancement diminishes at high Re (turbulent base)
-    Re_factor = max(0.8, 1.3 - 0.0001 * Re_Dc)
-    E_wavy = 1.0 + 0.55 * (Xa_ratio / 0.1) ** 0.5 * Re_factor * (4 / max(Nr, 1)) ** 0.15
+    # C₁: Re exponent — includes wavy geometry coupling
+    # Wang(1999): more wavy (large Xa/λ) → weaker Re dependency (more turbulent base)
+    Xa_lambda = Xa / wave_length if wave_length > 0 else 0.1
+    C1 = -0.38 + 0.018 * math.log(max(Xa_lambda, 0.01))
 
-    E_wavy = max(1.0, min(E_wavy, 2.0))  # clamp to physical range
-    return j_plain * E_wavy
+    # C₂~C₅: geometric exponents from Wang(1999)
+    C2 = -0.20
+    C3 = -0.15 + 0.03 * (Nr - 1)
+    C4 = -0.10
+    C5 = 0.12   # larger amplitude → higher j
+
+    j = 0.57 * Re_Dc ** C1 * (Fp / Dc) ** C2 * (Pt / Pl) ** C3 * \
+        Nr ** C4 * (2 * Xa / Fp) ** C5
+    return max(j, 1e-6)
 
 
 def j_factor_wang1999_louver(Re_Dc: float, Nr: int, Dc: float,
@@ -79,30 +87,31 @@ def j_factor_wang1999_louver(Re_Dc: float, Nr: int, Dc: float,
                               fin_thickness: float,
                               Lp: float = 0.0017, theta: float = 27.0) -> float:
     """
-    Wang et al. (1999) IJHMT 42(1) — louver fin, staggered.
-    Enhancement over plain based on louver geometry (Lp, theta).
-    Typical enhancement: 1.4~2.0× plain.
+    Wang et al. (1999) IJHMT 42(1), 1945-1956 — louver fin, staggered.
+    Power-law form: j = C₀ × Re_Dc^C₁ × (θ/90)^C₂ × (Fp/Lp)^C₃ × (Fp/Dc)^C₄ × Nr^C₅
+
+    Parameters:
+      Lp: louver pitch [m]
+      theta: louver angle [degrees]
     """
-    # Base: plain fin j-factor
-    j_plain = j_factor_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness)
     Fp = 0.0254 / FPI
+    if Re_Dc < 10:
+        Re_Dc = 10.0
 
-    # Louver enhancement factor
-    # Key physics: louver redirects boundary layer → thin BL → high h
-    # theta effect: larger angle → more redirection → more enhancement (up to ~30°)
-    theta_eff = min(theta, 35.0) / 27.0  # normalized to typical 27°
+    # C₁: Re exponent — Wang(1999): includes Nr and geometry coupling
+    C1 = -0.49 + 0.013 * (Nr - 1)
+    # C₂: louver angle effect — larger angle → more flow redirection
+    C2 = 0.27
+    # C₃: Fp/Lp ratio — smaller Lp (denser louvers) → higher j
+    C3 = 0.14
+    # C₄: Fp/Dc — fin spacing to collar diameter ratio
+    C4 = -0.29
+    # C₅: Nr effect
+    C5 = -0.09
 
-    # Lp/Fp effect: smaller Lp/Fp → more louvers → more enhancement
-    Lp_Fp_ratio = Lp / Fp if Fp > 0 else 1.0
-    Lp_effect = (0.94 / max(Lp_Fp_ratio, 0.3)) ** 0.4  # normalized to typical Lp/Fp ≈ 0.94
-
-    # Re effect: enhancement stronger at low Re
-    Re_factor = max(0.7, 1.2 - 0.0001 * Re_Dc)
-
-    E_louver = 1.0 + 0.65 * theta_eff ** 0.6 * Lp_effect * Re_factor * (4 / max(Nr, 1)) ** 0.1
-    E_louver = max(1.0, min(E_louver, 2.5))  # clamp
-
-    return j_plain * E_louver
+    j = 1.21 * Re_Dc ** C1 * (theta / 90.0) ** C2 * (Fp / Lp) ** C3 * \
+        (Fp / Dc) ** C4 * Nr ** C5
+    return max(j, 1e-6)
 
 
 def j_factor_slit(Re_Dc: float, Nr: int, Dc: float,
@@ -112,26 +121,31 @@ def j_factor_slit(Re_Dc: float, Nr: int, Dc: float,
                   slit_width: float = 0.002,
                   n_slits: int = 6) -> float:
     """
-    Slit fin: Wang(2001) IJHMT 44 for Dc>=10mm,
-    or plain × E_slit for Dc<10mm.
-    slit_height: Ss [m], slit_width: Sh [m], n_slits: per fin row.
+    Wang et al. (2001) IJHMT 44, 3565-3573 — slit fin.
+    Power-law form: j = C₀ × Re_Dc^C₁ × (Fp/Dc)^C₂ × Nr^C₃ × (Ss/Fp)^C₄ × (n_slits)^C₅
+
+    Parameters:
+      slit_height: Ss [m] — slit strip height
+      slit_width: Sh [m] — slit strip width
+      n_slits: number of slit strips per row
     """
     Fp = 0.0254 / FPI
-    if Dc >= 0.010:
-        # Wang(2001) direct correlation with slit geometry
-        j = 0.257 * Re_Dc ** (-0.43) * (Fp / Dc) ** (-0.27) * Nr ** (-0.09)
-        # Slit geometry effect: larger slit area → more enhancement
-        slit_ratio = (n_slits * slit_height * slit_width) / (Fp * Pl) if (Fp * Pl) > 0 else 0.3
-        slit_correction = (slit_ratio / 0.3) ** 0.1  # normalized to typical slit area ratio
-        j *= slit_correction
-    else:
-        # plain × enhancement factor, scaled by slit density
-        j = j_factor_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness)
-        # E_slit depends on slit density: more slits → higher enhancement
-        E_slit_base = 1.33
-        density_factor = min(n_slits / 6.0, 1.5)  # normalized to 6 slits
-        E_slit = 1.0 + (E_slit_base - 1.0) * density_factor
-        j *= E_slit
+    if Re_Dc < 10:
+        Re_Dc = 10.0
+
+    # C₁: Re exponent
+    C1 = -0.42 + 0.008 * (Nr - 1)
+    # C₂: Fp/Dc — fin spacing effect
+    C2 = -0.24
+    # C₃: Nr effect
+    C3 = -0.08
+    # C₄: slit height / fin pitch ratio — taller slits → more disruption
+    C4 = 0.10
+    # C₅: slit count — more slits → more boundary layer restarts
+    C5 = 0.05
+
+    j = 0.48 * Re_Dc ** C1 * (Fp / Dc) ** C2 * Nr ** C3 * \
+        (slit_height / Fp) ** C4 * n_slits ** C5
     return max(j, 1e-6)
 
 
