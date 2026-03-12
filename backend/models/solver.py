@@ -9,7 +9,8 @@ from .properties import RefrigerantProperties, MoistAirProperties
 from .geometry import FinTubeSpec, FinTubeGeo, MCHXSpec, MCHXGeo
 from .correlations import (
     compute_j_factor, select_correlations, recommend_correlation,
-    f_factor_wang2000_plain, f_factor_chang_wang_1997,
+    f_factor_wang2000_plain, f_factor_slit, f_factor_wavy, f_factor_louver,
+    f_factor_chang_wang_1997,
     h_with_transition,
     h_single_gnielinski,
 )
@@ -541,19 +542,22 @@ class HXSolver:
             Re_Dc = G_air * Dc / mu
             sigma = self.geo.sigma
 
-            # Base f-factor (plain)
-            f = f_factor_wang2000_plain(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                       spec.FPI, spec.fin_thickness)
-
-            # Enhanced fin f-factor correction
-            # Wang et al.: enhanced fins increase f by E_f factor
-            fin_f_multiplier = {
-                "plain": 1.0,
-                "wavy": 1.5,    # Wang(1999): wavy ~1.3-1.7× plain
-                "louver": 1.8,  # Wang(1999): louver ~1.5-2.0× plain
-                "slit": 1.6,    # Wang(2001): slit ~1.4-1.8× plain
-            }
-            f *= fin_f_multiplier.get(spec.fin_type, 1.0)
+            # Fin-type specific f-factor
+            if spec.fin_type == "slit":
+                f = f_factor_slit(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
+                                  spec.FPI, spec.fin_thickness,
+                                  spec.slit_height, spec.slit_width, spec.n_slits)
+            elif spec.fin_type == "wavy":
+                f = f_factor_wavy(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
+                                  spec.FPI, spec.fin_thickness,
+                                  spec.wavy_amplitude, spec.wavy_wavelength)
+            elif spec.fin_type == "louver":
+                f = f_factor_louver(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
+                                    spec.FPI, spec.fin_thickness,
+                                    spec.louver_pitch, spec.louver_angle)
+            else:
+                f = f_factor_wang2000_plain(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
+                                           spec.FPI, spec.fin_thickness)
 
             A_ratio = self.geo.A_total / self.geo.A_c if self.geo.A_c > 0 else 10
 
