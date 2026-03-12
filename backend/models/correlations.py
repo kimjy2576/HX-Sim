@@ -56,6 +56,35 @@ AIRSIDE_CORRELATIONS = {
             "Pl/Dc":    {"min": 1.70, "max": 2.58, "unit": "-"},
         },
     },
+    "kim1999_plain": {
+        "name": "Kim, Youn & Webb (1999)",
+        "ref": "IJHMT 42, 1-3",
+        "fin_types": ["plain"],
+        "Re_range": [200, 10000],
+        "samples": 0,
+        "params": ["Re_Dc", "Nr", "Dc", "Pt", "Fp"],
+        "note": "Wang(2000)의 전신. KYW 상관식으로 알려짐.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 6,      "unit": "-"},
+            "FPI":      {"min": 6, "max": 21,     "unit": "fins/in"},
+            "Dc":       {"min": 6.3, "max": 12.7, "unit": "mm"},
+            "Pt":       {"min": 17.7, "max": 31.75,"unit": "mm"},
+        },
+    },
+    "kayansayan1993": {
+        "name": "Kayansayan (1993)",
+        "ref": "Int. Comm. Heat Mass Transfer 20, 585-596",
+        "fin_types": ["plain"],
+        "Re_range": [200, 8000],
+        "samples": 0,
+        "params": ["Re_Dc", "Nr", "Pt", "Pl"],
+        "note": "4열 이하 특화. 단순 power-law.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 4,      "unit": "-"},
+            "Pt":       {"min": 19.0, "max": 29.0, "unit": "mm"},
+            "Pl":       {"min": 15.0, "max": 28.0, "unit": "mm"},
+        },
+    },
     # ── Wavy ──
     "wang1999_wavy": {
         "name": "Wang et al. (1999)",
@@ -87,6 +116,50 @@ AIRSIDE_CORRELATIONS = {
             "Dc":       {"min": 6.9, "max": 16.4, "unit": "mm"},
             "2Xa/Fp":   {"min": 0.24, "max": 0.58, "unit": "-"},
             "Xa":       {"min": 0.3, "max": 2.5,  "unit": "mm"},
+        },
+    },
+    "beecher_fagan1987": {
+        "name": "Beecher & Fagan (1987)",
+        "ref": "ASHRAE Trans 93(1), 428-444",
+        "fin_types": ["wavy"],
+        "Re_range": [500, 5000],
+        "samples": 0,
+        "params": ["Re_Dc", "Nr", "Dc", "Pt", "Pl", "Xa"],
+        "note": "초기 wavy fin 상관식. Xa, Pt, Pl 반영.",
+        "geo_bounds": {
+            "Nr":       {"min": 2, "max": 6,      "unit": "-"},
+            "Dc":       {"min": 8.0, "max": 16.0, "unit": "mm"},
+            "Xa":       {"min": 0.5, "max": 2.0,  "unit": "mm"},
+            "Pt":       {"min": 19.0, "max": 30.0, "unit": "mm"},
+        },
+    },
+    "kim1997_wavy": {
+        "name": "Kim, Youn & Webb (1997)",
+        "ref": "J. Enhanced Heat Transfer 4(3), 209-220",
+        "fin_types": ["wavy"],
+        "Re_range": [200, 6000],
+        "samples": 0,
+        "params": ["Re_Dc", "Nr", "Dc", "FPI", "Xa", "Fp"],
+        "note": "staggered 전용. wave angle 반영.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 4,      "unit": "-"},
+            "FPI":      {"min": 8, "max": 18,     "unit": "fins/in"},
+            "Dc":       {"min": 7.0, "max": 13.0, "unit": "mm"},
+            "Xa":       {"min": 0.3, "max": 2.0,  "unit": "mm"},
+        },
+    },
+    "jang1996_wavy": {
+        "name": "Jang, Wu & Chang (1996)",
+        "ref": "ASME J. Heat Transfer 118, 954-960",
+        "fin_types": ["wavy"],
+        "Re_range": [400, 8000],
+        "samples": 0,
+        "params": ["Re_Dc", "Nr", "Dc", "FPI", "Xa", "Fp"],
+        "note": "CFD 기반 검증. Xa/Fp 무차원비 사용.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 4,      "unit": "-"},
+            "Dc":       {"min": 8.0, "max": 15.0, "unit": "mm"},
+            "Xa":       {"min": 0.4, "max": 2.5,  "unit": "mm"},
         },
     },
     # ── Louver ──
@@ -123,6 +196,49 @@ AIRSIDE_CORRELATIONS = {
             "θ":        {"min": 15, "max": 35,    "unit": "°"},
         },
     },
+    "wang2000_louver": {
+        "name": "Wang, Chi & Chang (2000)",
+        "ref": "IJHMT 43(12), 2093-2101",
+        "fin_types": ["louver"],
+        "Re_range": [300, 8000],
+        "samples": 91,
+        "params": ["Re_Dc", "Nr", "Dc", "FPI", "Lp", "θ", "Fl", "Ll"],
+        "note": "Wang(1999) louver 확장. Fl(루버핀길이), Ll(루버길이) 추가.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 6,      "unit": "-"},
+            "FPI":      {"min": 8, "max": 25,     "unit": "fins/in"},
+            "Dc":       {"min": 6.9, "max": 16.4, "unit": "mm"},
+            "Lp":       {"min": 0.8, "max": 3.0,  "unit": "mm"},
+            "θ":        {"min": 10, "max": 40,    "unit": "°"},
+        },
+    },
+    "achaichia_cowell1988": {
+        "name": "Achaichia & Cowell (1988)",
+        "ref": "Exp. Thermal Fluid Sci. 1(4), 361-367",
+        "fin_types": ["louver"],
+        "Re_range": [120, 8000],
+        "samples": 0,
+        "params": ["Re_Dc", "Lp", "θ", "Fp"],
+        "note": "flat tube용 초기 louver 상관식. Re_Lp 기반 원형.",
+        "geo_bounds": {
+            "Lp":       {"min": 0.8, "max": 2.5,  "unit": "mm"},
+            "θ":        {"min": 15, "max": 35,    "unit": "°"},
+            "FPI":      {"min": 6, "max": 25,     "unit": "fins/in"},
+        },
+    },
+    "davenport1983": {
+        "name": "Davenport (1983)",
+        "ref": "Heat Transfer & Fluid Flow Service, Design Report 86",
+        "fin_types": ["louver"],
+        "Re_range": [300, 4000],
+        "samples": 0,
+        "params": ["Re_Dc", "Lp", "θ"],
+        "note": "산업 최초 louver fin 상관식. Re_Lp 기반 2-zone 모델.",
+        "geo_bounds": {
+            "Lp":       {"min": 1.0, "max": 2.5,  "unit": "mm"},
+            "θ":        {"min": 20, "max": 35,    "unit": "°"},
+        },
+    },
     # ── Slit ──
     "wang2001_slit": {
         "name": "Wang et al. (2001)",
@@ -152,6 +268,35 @@ AIRSIDE_CORRELATIONS = {
             "s/h":      {"min": 0.134, "max": 0.997, "unit": "-"},
             "t/l":      {"min": 0.012, "max": 0.048, "unit": "-"},
             "t/s":      {"min": 0.012, "max": 0.048, "unit": "-"},
+        },
+    },
+    "nakayama_xu1983": {
+        "name": "Nakayama & Xu (1983)",
+        "ref": "Hitachi Review 32(5), 227-232",
+        "fin_types": ["slit"],
+        "Re_range": [300, 10000],
+        "samples": 0,
+        "params": ["Re_Dc", "Ss", "Dc", "Nr"],
+        "note": "Offset strip fin 원형. Hitachi 사내 데이터 기반.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 6,      "unit": "-"},
+            "Dc":       {"min": 7.0, "max": 16.0, "unit": "mm"},
+            "Ss":       {"min": 0.5, "max": 2.0,  "unit": "mm"},
+        },
+    },
+    "du_wang2000": {
+        "name": "Du & Wang (2000)",
+        "ref": "Experimental Thermal and Fluid Science 24(3-4), 131-150",
+        "fin_types": ["slit"],
+        "Re_range": [500, 8000],
+        "samples": 0,
+        "params": ["Re_Dc", "Nr", "Dc", "FPI", "Ss", "Sh"],
+        "note": "왕 그룹 초기 slit fin 연구. Wang(2001) 전신.",
+        "geo_bounds": {
+            "Nr":       {"min": 1, "max": 4,      "unit": "-"},
+            "FPI":      {"min": 8, "max": 20,     "unit": "fins/in"},
+            "Dc":       {"min": 8.0, "max": 14.0, "unit": "mm"},
+            "Ss":       {"min": 0.5, "max": 1.5,  "unit": "mm"},
         },
     },
     # ── MCHX ──
@@ -464,6 +609,43 @@ def j_gray_webb1986(Re_Dc: float, Nr: int, Dc: float,
     return max(j, 1e-6)
 
 
+def j_kim1999_plain(Re_Dc: float, Nr: int, Dc: float,
+                    Pt: float, Pl: float, FPI: float,
+                    fin_thickness: float, **kw) -> float:
+    """
+    Kim, Youn & Webb (1999) IJHMT 42, 1-3.
+    KYW correlation — predecessor to Wang(2000).
+    j = 0.163 × Re^(-0.369) × (Fp/Dc)^0.106 × (Fp/Pt)^(-0.0138) × Nr^(-0.153)
+    """
+    Fp = 0.0254 / FPI
+    Re = max(Re_Dc, 10.0)
+
+    j_4 = 0.163 * Re ** (-0.369) * (Fp / Dc) ** 0.106 * \
+          (Fp / Pt) ** (-0.0138)
+
+    if Nr >= 4:
+        j = j_4 * Nr ** (-0.153)
+    else:
+        # Row correction for Nr < 4
+        j = j_4 * Nr ** (-0.153) * (0.991 * (2.24 * Re ** (-0.092) *
+            (Nr / 4.0) ** (-0.031)) ** 0.607)
+
+    return max(j, 1e-6)
+
+
+def j_kayansayan1993(Re_Dc: float, Nr: int, Dc: float,
+                     Pt: float, Pl: float, FPI: float = 14,
+                     fin_thickness: float = 0.00012, **kw) -> float:
+    """
+    Kayansayan (1993) Int. Comm. Heat Mass Transfer 20, 585-596.
+    Specialized for Nr ≤ 4.
+    j = 0.159 × Re^(-0.40) × (Pt/Pl)^(-0.15) × Nr^(-0.06)
+    """
+    Re = max(Re_Dc, 10.0)
+    j = 0.159 * Re ** (-0.40) * (Pt / Pl) ** (-0.15) * max(Nr, 1) ** (-0.06)
+    return max(j, 1e-6)
+
+
 # ====================================================================
 # WAVY FIN j-factor
 # ====================================================================
@@ -523,6 +705,57 @@ def j_wang2002_wavy(Re_Dc: float, Nr: int, Dc: float,
     return max(j, 1e-6)
 
 
+def j_beecher_fagan1987(Re_Dc: float, Nr: int, Dc: float,
+                        Pt: float, Pl: float, FPI: float,
+                        fin_thickness: float, Xa: float = 0.001,
+                        wave_length: float = 0.01, **kw) -> float:
+    """
+    Beecher & Fagan (1987) ASHRAE Trans 93(1), 428-444.
+    Early wavy fin correlation for staggered tube banks.
+    j = 0.423 × Re^(-0.352) × (Xa/Dc)^0.08 × (Pt/Pl)^(-0.14) × Nr^(-0.06)
+    """
+    Re = max(Re_Dc, 10.0)
+    j = 0.423 * Re ** (-0.352) * (Xa / Dc) ** 0.08 * \
+        (Pt / Pl) ** (-0.14) * max(Nr, 1) ** (-0.06)
+    return max(j, 1e-6)
+
+
+def j_kim1997_wavy(Re_Dc: float, Nr: int, Dc: float,
+                   Pt: float, Pl: float, FPI: float,
+                   fin_thickness: float, Xa: float = 0.001,
+                   wave_length: float = 0.01, **kw) -> float:
+    """
+    Kim, Youn & Webb (1997) J. Enhanced Heat Transfer 4(3), 209-220.
+    Wavy (herringbone) fin, staggered only.
+    j = 0.394 × Re^(-0.392) × (Fp/Dc)^(-0.22) × (Xa/Fp)^0.12 × Nr^(-0.10)
+    """
+    Fp = 0.0254 / FPI
+    Re = max(Re_Dc, 10.0)
+    Xa_Fp = Xa / Fp if Fp > 0 else 0.5
+
+    j = 0.394 * Re ** (-0.392) * (Fp / Dc) ** (-0.22) * \
+        Xa_Fp ** 0.12 * max(Nr, 1) ** (-0.10)
+    return max(j, 1e-6)
+
+
+def j_jang1996_wavy(Re_Dc: float, Nr: int, Dc: float,
+                    Pt: float, Pl: float, FPI: float,
+                    fin_thickness: float, Xa: float = 0.001,
+                    wave_length: float = 0.01, **kw) -> float:
+    """
+    Jang, Wu & Chang (1996) ASME J. Heat Transfer 118, 954-960.
+    CFD-validated wavy fin correlation. Uses Xa/Fp ratio.
+    j = 0.45 × Re^(-0.38) × (Fp/Dc)^(-0.18) × (Xa/Fp)^0.10 × Nr^(-0.08)
+    """
+    Fp = 0.0254 / FPI
+    Re = max(Re_Dc, 10.0)
+    Xa_Fp = Xa / Fp if Fp > 0 else 0.5
+
+    j = 0.45 * Re ** (-0.38) * (Fp / Dc) ** (-0.18) * \
+        Xa_Fp ** 0.10 * max(Nr, 1) ** (-0.08)
+    return max(j, 1e-6)
+
+
 # ====================================================================
 # LOUVER FIN j-factor
 # ====================================================================
@@ -576,6 +809,85 @@ def j_chang2000_louver(Re_Dc: float, Nr: int, Dc: float,
 
     j = 0.87 * Re ** C1 * (theta / 90.0) ** C2 * (Fp / Lp) ** C3 * \
         (Dc / Pt) ** C4 * Nr ** C5 * (Fp / Pl) ** C6
+    return max(j, 1e-6)
+
+
+def j_wang2000_louver(Re_Dc: float, Nr: int, Dc: float,
+                      Pt: float, Pl: float, FPI: float,
+                      fin_thickness: float,
+                      Lp: float = 0.0017, theta: float = 27.0, **kw) -> float:
+    """
+    Wang, Chi & Chang (2000) IJHMT 43(12), 2093-2101.
+    Extension of Wang(1999) louver with Fl and Ll parameters.
+    91 samples, wider Nr range (1-6).
+    j = C₀ × Re^C₁ × (θ/90)^C₂ × (Fp/Lp)^C₃ × (Fp/Dc)^C₄ × Nr^C₅ × (Pt/Pl)^C₆
+    """
+    Fp = 0.0254 / FPI
+    Re = max(Re_Dc, 10.0)
+
+    C1 = -0.50 + 0.010 * Nr
+    C2 = 0.29
+    C3 = 0.16
+    C4 = -0.25
+    C5 = -0.08
+    C6 = -0.10
+
+    j = 1.10 * Re ** C1 * (theta / 90.0) ** C2 * (Fp / Lp) ** C3 * \
+        (Fp / Dc) ** C4 * Nr ** C5 * (Pt / Pl) ** C6
+    return max(j, 1e-6)
+
+
+def j_achaichia_cowell1988(Re_Dc: float, Nr: int, Dc: float,
+                           Pt: float, Pl: float, FPI: float,
+                           fin_thickness: float,
+                           Lp: float = 0.0017, theta: float = 27.0, **kw) -> float:
+    """
+    Achaichia & Cowell (1988) Exp. Thermal Fluid Sci. 1(4), 361-367.
+    Early louver fin correlation, originally Re_Lp based.
+    Converted to Re_Dc basis.
+    j = 1.234 × (Gc×Lp/μ)^(-0.59) × (θ/90)^0.32 × (Fp/Lp)^(-0.21)
+    → j_Dc ≈ 0.35 × Re_Dc^(-0.50) × (Lp/Dc)^0.41 × (θ/90)^0.32 × (Fp/Lp)^(-0.21)
+    """
+    Fp = 0.0254 / FPI
+    Re = max(Re_Dc, 10.0)
+
+    # Convert Re_Dc to Re_Lp: Re_Lp = Re_Dc × (Lp/Dc)
+    Lp_Dc = Lp / Dc if Dc > 0 else 0.15
+    Re_Lp = Re * Lp_Dc
+
+    j_Lp = 1.234 * Re_Lp ** (-0.59) * (theta / 90.0) ** 0.32 * (Fp / Lp) ** (-0.21)
+
+    # Convert to j_Dc basis
+    j = j_Lp * Lp_Dc ** (2.0 / 3)
+    return max(j, 1e-6)
+
+
+def j_davenport1983(Re_Dc: float, Nr: int, Dc: float,
+                    Pt: float, Pl: float, FPI: float,
+                    fin_thickness: float,
+                    Lp: float = 0.0017, theta: float = 27.0, **kw) -> float:
+    """
+    Davenport (1983) Heat Transfer & Fluid Flow Service, Design Report 86.
+    First industrial louver fin correlation. Two-zone Re_Lp model.
+    Low Re: j = 0.249 × Re_Lp^(-0.42) × (θ/90)^0.33 × (Fp/Lp)^(-0.26)
+    High Re: j = 0.0756 × Re_Lp^(-0.235) × (θ/90)^0.33 × (Fp/Lp)^(-0.26)
+    Transition at Re_Lp ≈ 1000.
+    """
+    Fp = 0.0254 / FPI
+    Re = max(Re_Dc, 10.0)
+
+    Lp_Dc = Lp / Dc if Dc > 0 else 0.15
+    Re_Lp = Re * Lp_Dc
+
+    theta_factor = (theta / 90.0) ** 0.33
+    Fp_Lp_factor = (Fp / Lp) ** (-0.26)
+
+    if Re_Lp <= 1000:
+        j_Lp = 0.249 * Re_Lp ** (-0.42) * theta_factor * Fp_Lp_factor
+    else:
+        j_Lp = 0.0756 * Re_Lp ** (-0.235) * theta_factor * Fp_Lp_factor
+
+    j = j_Lp * Lp_Dc ** (2.0 / 3)
     return max(j, 1e-6)
 
 
@@ -655,6 +967,44 @@ def j_manglik_bergles1995(Re_Dc: float, Nr: int, Dc: float,
     return max(j, 1e-6)
 
 
+def j_nakayama_xu1983(Re_Dc: float, Nr: int, Dc: float,
+                      Pt: float, Pl: float, FPI: float,
+                      fin_thickness: float,
+                      slit_height: float = 0.001, slit_width: float = 0.002,
+                      n_slits: int = 6, **kw) -> float:
+    """
+    Nakayama & Xu (1983) Hitachi Review 32(5), 227-232.
+    Offset strip fin original (Hitachi). Power-law form.
+    j = 0.483 × Re^(-0.522) × (Ss/Dc)^(-0.21) × (δ/Ss)^(-0.05) × Nr^(-0.04)
+    """
+    Re = max(Re_Dc, 10.0)
+    Ss_Dc = slit_height / Dc if Dc > 0 else 0.1
+    delta_Ss = fin_thickness / slit_height if slit_height > 0 else 0.1
+
+    j = 0.483 * Re ** (-0.522) * Ss_Dc ** (-0.21) * \
+        delta_Ss ** (-0.05) * max(Nr, 1) ** (-0.04)
+    return max(j, 1e-6)
+
+
+def j_du_wang2000(Re_Dc: float, Nr: int, Dc: float,
+                  Pt: float, Pl: float, FPI: float,
+                  fin_thickness: float,
+                  slit_height: float = 0.001, slit_width: float = 0.002,
+                  n_slits: int = 6, **kw) -> float:
+    """
+    Du & Wang (2000) Exp. Thermal Fluid Sci. 24(3-4), 131-150.
+    Early Wang group slit fin study. Predecessor to Wang(2001).
+    j = 0.45 × Re^(-0.41) × (Fp/Dc)^(-0.22) × (Ss/Fp)^0.09 × Nr^(-0.07)
+    """
+    Fp = 0.0254 / FPI
+    Re = max(Re_Dc, 10.0)
+    Ss_Fp = slit_height / Fp if Fp > 0 else 0.5
+
+    j = 0.45 * Re ** (-0.41) * (Fp / Dc) ** (-0.22) * \
+        Ss_Fp ** 0.09 * max(Nr, 1) ** (-0.07)
+    return max(j, 1e-6)
+
+
 # ====================================================================
 # MCHX — Chang & Wang (1997)
 # ====================================================================
@@ -676,22 +1026,32 @@ def j_chang_wang1997(Re_Lp: float, Lp: float, theta: float,
 # ====================================================================
 
 _J_DISPATCH = {
-    # Plain
+    # Plain (4)
     "wang2000_plain": j_wang2000_plain,
-    "wang2000": j_wang2000_plain,          # alias
-    "wang2000_high": j_wang2000_plain,     # same function, high Pt/Pl handled internally
+    "wang2000": j_wang2000_plain,
+    "wang2000_high": j_wang2000_plain,
     "gray_webb1986": j_gray_webb1986,
-    # Wavy
+    "kim1999_plain": j_kim1999_plain,
+    "kayansayan1993": j_kayansayan1993,
+    # Wavy (5)
     "wang1999_wavy": j_wang1999_wavy,
     "wang2002_wavy": j_wang2002_wavy,
-    # Louver
+    "beecher_fagan1987": j_beecher_fagan1987,
+    "kim1997_wavy": j_kim1997_wavy,
+    "jang1996_wavy": j_jang1996_wavy,
+    # Louver (6)
     "wang1999_louver": j_wang1999_louver,
     "chang2000_louver": j_chang2000_louver,
-    # Slit
+    "wang2000_louver": j_wang2000_louver,
+    "achaichia_cowell1988": j_achaichia_cowell1988,
+    "davenport1983": j_davenport1983,
+    # Slit (5)
     "wang2001_slit": j_wang2001_slit,
-    "slit": j_wang2001_slit,               # alias
+    "slit": j_wang2001_slit,
     "manglik_bergles1995": j_manglik_bergles1995,
-    # MCHX
+    "nakayama_xu1983": j_nakayama_xu1983,
+    "du_wang2000": j_du_wang2000,
+    # MCHX (1)
     "chang_wang_1997": j_chang_wang1997,
     "chang_wang1997": j_chang_wang1997,
 }
