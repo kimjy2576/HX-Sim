@@ -35,12 +35,17 @@ class FinTubeSpec:
     k_fin: float = 200.0    # fin thermal conductivity [W/(m·K)] (aluminum)
 
     # Wavy fin extra
-    wavy_amplitude: float = 0.001  # [m]
-    wavy_wavelength: float = 0.01  # [m]
+    wavy_amplitude: float = 0.001  # Xa [m] — wave amplitude (half peak-to-peak)
+    wavy_wavelength: float = 0.01  # λ [m] — wave wavelength
 
     # Louver fin extra
-    louver_pitch: float = 0.0017   # [m]
-    louver_angle: float = 27.0     # [degrees]
+    louver_pitch: float = 0.0017   # Lp [m]
+    louver_angle: float = 27.0     # θ [degrees]
+
+    # Slit fin extra
+    slit_height: float = 0.001     # Ss [m] — slit height
+    slit_width: float = 0.002      # Sh [m] — slit width
+    n_slits: int = 6               # number of slits per fin row
 
     # Number of segments per tube
     N_seg: int = 5

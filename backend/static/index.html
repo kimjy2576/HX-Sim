@@ -28,7 +28,11 @@ const API_URL = window.location.origin;
 const DEFAULT_FT = {
   W:0.5,H:0.3,D:0.08,Do:0.00952,Di:0.00822,Pt:0.0254,Pl:0.022,
   Nr:4,Nt:12,layout:"staggered",FPI:14,fin_thickness:0.00012,
-  fin_type:"plain",k_fin:200,louver_pitch:0.0017,louver_angle:27,N_seg:5
+  fin_type:"plain",k_fin:200,
+  wavy_amplitude:0.001,wavy_wavelength:0.01,
+  louver_pitch:0.0017,louver_angle:27,
+  slit_height:0.001,slit_width:0.002,n_slits:6,
+  N_seg:5
 };
 const DEFAULT_MCHX = {
   W:0.6,H:0.4,D:0.02,n_slabs:1,ch_width:0.001,ch_height:0.0015,
@@ -313,6 +317,29 @@ function App() {
               <Field label="Nt" unit="tubes" value={ftSpec.Nt} onChange={v=>uF("Nt",parseInt(v)||1)}/>
               <Field label="FPI" unit="fins/in" value={ftSpec.FPI} onChange={v=>uF("FPI",v)}/>
               <Field label="Fin" options={["plain","wavy","louver","slit"]} value={ftSpec.fin_type} onChange={v=>uF("fin_type",v)}/>
+              {/* Fin-type specific parameters */}
+              {ftSpec.fin_type==="wavy"&&(<>
+                <div style={{borderLeft:`2px solid ${C.warn}`,paddingLeft:10,marginBottom:6}}>
+                  <div style={{fontSize:9,color:C.warn,fontWeight:700,marginBottom:4}}>WAVY FIN</div>
+                  <Field label="Xa" unit="mm" value={ftSpec.wavy_amplitude*1000} onChange={v=>uF("wavy_amplitude",v/1000)}/>
+                  <Field label="λ" unit="mm" value={ftSpec.wavy_wavelength*1000} onChange={v=>uF("wavy_wavelength",v/1000)}/>
+                </div>
+              </>)}
+              {ftSpec.fin_type==="louver"&&(<>
+                <div style={{borderLeft:`2px solid ${C.accent3}`,paddingLeft:10,marginBottom:6}}>
+                  <div style={{fontSize:9,color:C.accent3,fontWeight:700,marginBottom:4}}>LOUVER FIN</div>
+                  <Field label="Lp" unit="mm" value={ftSpec.louver_pitch*1000} onChange={v=>uF("louver_pitch",v/1000)}/>
+                  <Field label="θ" unit="°" value={ftSpec.louver_angle} onChange={v=>uF("louver_angle",v)}/>
+                </div>
+              </>)}
+              {ftSpec.fin_type==="slit"&&(<>
+                <div style={{borderLeft:`2px solid ${C.accent2}`,paddingLeft:10,marginBottom:6}}>
+                  <div style={{fontSize:9,color:C.accent2,fontWeight:700,marginBottom:4}}>SLIT FIN</div>
+                  <Field label="Ss" unit="mm" value={ftSpec.slit_height*1000} onChange={v=>uF("slit_height",v/1000)}/>
+                  <Field label="Sh" unit="mm" value={ftSpec.slit_width*1000} onChange={v=>uF("slit_width",v/1000)}/>
+                  <Field label="n_slits" value={ftSpec.n_slits} onChange={v=>uF("n_slits",parseInt(v)||1)}/>
+                </div>
+              </>)}
               <Field label="N_seg" unit="/tube" value={ftSpec.N_seg} onChange={v=>uF("N_seg",parseInt(v)||1)}/>
             </InputGroup>
           ):(

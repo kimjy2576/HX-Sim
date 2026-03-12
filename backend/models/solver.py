@@ -466,14 +466,16 @@ class HXSolver:
                                                       spec.FPI, spec.fin_thickness)
             elif corr_name == "wang1999_wavy":
                 j = j_factor_wang1999_wavy(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                          spec.FPI, spec.fin_thickness)
+                                          spec.FPI, spec.fin_thickness,
+                                          spec.wavy_amplitude, spec.wavy_wavelength)
             elif corr_name == "wang1999_louver":
                 j = j_factor_wang1999_louver(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
                                             spec.FPI, spec.fin_thickness,
                                             spec.louver_pitch, spec.louver_angle)
             elif corr_name == "slit":
                 j = j_factor_slit(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
-                                 spec.FPI, spec.fin_thickness)
+                                 spec.FPI, spec.fin_thickness,
+                                 spec.slit_height, spec.slit_width, spec.n_slits)
             else:
                 j = j_factor_wang2000_plain(Re_Dc, spec.Nr, Dc, spec.Pt, spec.Pl,
                                            spec.FPI, spec.fin_thickness)

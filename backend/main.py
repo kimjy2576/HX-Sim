@@ -48,8 +48,16 @@ class FTSpecInput(BaseModel):
     fin_thickness: float = 0.00012
     fin_type: Literal["plain", "wavy", "louver", "slit"] = "plain"
     k_fin: float = 200.0
+    # Wavy
+    wavy_amplitude: float = 0.001
+    wavy_wavelength: float = 0.01
+    # Louver
     louver_pitch: float = 0.0017
     louver_angle: float = 27.0
+    # Slit
+    slit_height: float = 0.001
+    slit_width: float = 0.002
+    n_slits: int = 6
     N_seg: int = 5
 
 
@@ -235,7 +243,9 @@ def simulate(req: SimRequest):
                 layout=ft_in.layout,
                 FPI=ft_in.FPI, fin_thickness=ft_in.fin_thickness,
                 fin_type=ft_in.fin_type, k_fin=ft_in.k_fin,
+                wavy_amplitude=ft_in.wavy_amplitude, wavy_wavelength=ft_in.wavy_wavelength,
                 louver_pitch=ft_in.louver_pitch, louver_angle=ft_in.louver_angle,
+                slit_height=ft_in.slit_height, slit_width=ft_in.slit_width, n_slits=ft_in.n_slits,
                 N_seg=ft_in.N_seg,
             )
 
