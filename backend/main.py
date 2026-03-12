@@ -142,7 +142,16 @@ STATIC_DIR = Path(__file__).parent / "static"
 @app.get("/")
 def root():
     """Serve frontend UI."""
-    return FileResponse(STATIC_DIR / "index.html")
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return {"error": "index.html not found", "static_dir": str(STATIC_DIR),
+            "files": [str(f) for f in STATIC_DIR.iterdir()] if STATIC_DIR.exists() else "dir missing"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "static_exists": (STATIC_DIR / "index.html").exists()}
 
 
 @app.get("/api")
