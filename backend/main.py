@@ -468,14 +468,12 @@ def get_circuit_presets(Nr: int = 4, Nt: int = 4, flow: str = "counter"):
 
 
 @app.get("/ref_correlations")
-def get_ref_correlations(mode: str = "evap"):
-    """Get available refrigerant-side correlations."""
-    if mode == "evap":
-        return {"mode": mode, "available": list(REFSIDE_EVAP_CORRELATIONS.keys()),
-                "details": REFSIDE_EVAP_CORRELATIONS}
-    else:
-        return {"mode": mode, "available": list(REFSIDE_COND_CORRELATIONS.keys()),
-                "details": REFSIDE_COND_CORRELATIONS}
+def get_ref_correlations(mode: str = "evap", hx_type: str = "FT"):
+    """Get available refrigerant-side correlations filtered by HX type."""
+    available = get_available_ref_correlations(mode, hx_type)
+    registry = REFSIDE_EVAP_CORRELATIONS if mode == "evap" else REFSIDE_COND_CORRELATIONS
+    details = {cid: registry[cid] for cid in available}
+    return {"mode": mode, "hx_type": hx_type, "available": available, "details": details}
 
 
 if __name__ == "__main__":

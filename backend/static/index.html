@@ -515,17 +515,23 @@ function App() {
                 </div>
                 {(()=>{
                   const key = mode==="evap"?"evap":"cond";
-                  const corrs = mode==="evap"?{
-                    chen1966:{l:"Chen(1966)",d:"원본 S·h_nb 포함, 저건도 핵비등"},
-                    gungor_winterton1986:{l:"Gungor-W.(1986)",d:"혼합영역(0.1~0.8) 정확"},
-                    kandlikar1990:{l:"Kandlikar(1990)",d:"Co/Bo 기반, Ffl 냉매별"},
-                    kim_mudawar2013:{l:"Kim-M.(2013)",d:"미니채널 전용 Dh<3mm"},
+                  const isMCHX = hxType==="MCHX";
+                  const corrs = mode==="evap"?(isMCHX?{
+                    kim_mudawar2013:{l:"Kim-M.(2013)",d:"전건도, 10805 data, h=√(h_nb²+h_cb²)"},
+                    bertsch2009:{l:"Bertsch(2009)",d:"Confined bubble, 저건도(x<0.3)↑"},
+                    sun_mishima2009:{l:"Sun-M.(2009)",d:"We/Re 기반, 2505 data, 고건도↑"},
                   }:{
-                    shah1979:{l:"Shah(1979)",d:"범용, annular 정확"},
-                    cavallini2006:{l:"Cavallini(2006)",d:"Flow regime 자동, 저건도↑"},
-                    dobson_chato1998:{l:"Dobson-C.(1998)",d:"수평관, stratified-wavy"},
-                    kim_mudawar2012:{l:"Kim-M.(2012)",d:"미니채널 전용 Dh<3mm"},
-                  };
+                    chen1966:{l:"Chen(1966)",d:"원본 S·h_nb, 저건도 핵비등 x<0.3"},
+                    gungor_winterton1986:{l:"Gungor-W.(1986)",d:"혼합영역 0.1<x<0.8"},
+                    kandlikar1990:{l:"Kandlikar(1990)",d:"Co/Bo, Ffl 냉매별, x>0.7"},
+                  }):(isMCHX?{
+                    kim_mudawar2012:{l:"Kim-M.(2012)",d:"We* annular/slug 분기, 전건도"},
+                    koyama2003:{l:"Koyama(2003)",d:"√(h_forced²+h_grav²), 저건도 x<0.4↑"},
+                  }:{
+                    shah1979:{l:"Shah(1979)",d:"범용, annular x>0.5 정확"},
+                    cavallini2006:{l:"Cavallini(2006)",d:"Flow regime 자동, 저건도 x<0.3↑"},
+                    dobson_chato1998:{l:"Dobson-C.(1998)",d:"수평관 stratified-wavy 분리"},
+                  });
                   const cur = refCorr[key];
                   return (<>
                     <div style={{display:"flex",gap:4,marginBottom:4}}>

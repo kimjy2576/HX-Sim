@@ -1739,56 +1739,78 @@ def f_factor_chang_wang_1997(Re_Lp, Lp, theta, Fp):
 # ====================================================================
 
 REFSIDE_EVAP_CORRELATIONS = {
+    # ── FT (conventional tube, Dh > 3mm) ──
     "chen1966": {
         "name": "Chen (1966) — Original",
         "ref": "I&EC Proc. Des. Dev. 5(3), 322-329",
-        "note": "h=F·h_l + S·h_nb. 원본 복원(S·h_nb 포함). x<0.3 핵비등 정확.",
-        "x_range": [0.01, 0.95],
+        "note": "h=F·h_l + S·h_nb. 핵비등 복원. 저건도(x<0.3) 정확.",
+        "x_range": [0.01, 0.95], "hx_type": ["FT"],
     },
     "gungor_winterton1986": {
         "name": "Gungor & Winterton (1986)",
         "ref": "IJHMT 29(3), 351-358",
-        "note": "E·h_l + S·h_pool. 0.1<x<0.8 혼합영역 정확. 3693 data.",
-        "x_range": [0.01, 0.95],
+        "note": "E·h_l + S·h_pool. 혼합영역(0.1<x<0.8) 정확. 3693 data.",
+        "x_range": [0.01, 0.95], "hx_type": ["FT"],
     },
     "kandlikar1990": {
         "name": "Kandlikar (1990)",
         "ref": "ASME J. Heat Transfer 112, 219-228",
-        "note": "Co/Bo 기반 2영역. 냉매별 Ffl 계수. 광범위 검증.",
-        "x_range": [0.01, 0.95],
+        "note": "Co/Bo 2영역. 냉매별 Ffl. 관경 3~32mm.",
+        "x_range": [0.01, 0.95], "hx_type": ["FT"],
     },
+    # ── MCHX (mini/micro channel, Dh < 3mm) ──
     "kim_mudawar2013": {
         "name": "Kim & Mudawar (2013)",
         "ref": "IJHMT 64, 928-941",
-        "note": "미니/마이크로 채널 전용. h=√(h_nb²+h_cb²). Dh<3mm.",
-        "x_range": [0.01, 0.95],
+        "note": "h=√(h_nb²+h_cb²). 10,805 data. 표면장력/관성 기반. 전 건도.",
+        "x_range": [0.01, 0.95], "hx_type": ["MCHX"],
+    },
+    "bertsch2009": {
+        "name": "Bertsch et al. (2009)",
+        "ref": "IJHMT 52, 2110-2118",
+        "note": "h=S·h_nb + F·h_conv. Confined bubble 반영. 저건도(x<0.3) 정확.",
+        "x_range": [0.01, 0.95], "hx_type": ["MCHX"],
+    },
+    "sun_mishima2009": {
+        "name": "Sun & Mishima (2009)",
+        "ref": "IJHMT 52, 5323-5329",
+        "note": "We/Re 기반 Lazarek-Black 수정. 2505 data. Dh 0.21~6.5mm.",
+        "x_range": [0.01, 0.95], "hx_type": ["MCHX"],
     },
 }
 
 REFSIDE_COND_CORRELATIONS = {
+    # ── FT (conventional tube) ──
     "shah1979": {
         "name": "Shah (1979)",
         "ref": "IJHMT 22, 547-556",
-        "note": "h=h_lo·[(1-x)^0.8 + 3.8x^0.76(1-x)^0.04/Pr^0.38]. 범용.",
-        "x_range": [0.05, 0.99],
+        "note": "범용. Annular(x>0.5) 정확. 474 data.",
+        "x_range": [0.05, 0.99], "hx_type": ["FT"],
     },
     "cavallini2006": {
         "name": "Cavallini et al. (2006)",
         "ref": "IJHMT 49, 3309-3320",
-        "note": "Flow regime 자동 판별 (ΔT-independent/dependent). 저건도 정확.",
-        "x_range": [0.01, 0.99],
+        "note": "J_G 기반 flow regime 자동판별. 저건도(x<0.3) 정확.",
+        "x_range": [0.01, 0.99], "hx_type": ["FT"],
     },
     "dobson_chato1998": {
         "name": "Dobson & Chato (1998)",
         "ref": "ASME J. Heat Transfer 120, 52-60",
-        "note": "Annular + stratified-wavy 분리 모델. 수평관 응축.",
-        "x_range": [0.05, 0.99],
+        "note": "수평관 annular+stratified-wavy 분리. 중건도 정확.",
+        "x_range": [0.05, 0.99], "hx_type": ["FT"],
     },
+    # ── MCHX (mini/micro channel) ──
     "kim_mudawar2012": {
         "name": "Kim & Mudawar (2012)",
         "ref": "IJHMT 55, 3246-3261",
-        "note": "미니/마이크로 채널. Annular/slug 자동 분기. Dh<3mm.",
-        "x_range": [0.01, 0.99],
+        "note": "We* annular/slug 분기. 전 건도. Dh<3mm.",
+        "x_range": [0.01, 0.99], "hx_type": ["MCHX"],
+    },
+    "koyama2003": {
+        "name": "Koyama et al. (2003)",
+        "ref": "IJREFRIG 26, 38-43",
+        "note": "√(h_forced² + h_grav²). 표면장력+중력. Dh 0.8~3mm.",
+        "x_range": [0.01, 0.99], "hx_type": ["MCHX"],
     },
 }
 
@@ -1951,6 +1973,85 @@ def h_evap_kim_mudawar_2013(x, G, Dh, q_flux, ref, P, P_H=1.0, P_F=1.0, **kw):
     h_cb = (5.2 * (Bo * pr) ** 0.08 * We_fo ** (-0.54) +
             3.5 / max(Xtt, 1e-6) ** 0.94 * (rho_v / rho_l) ** 0.25) * h_f
     return max(math.sqrt(h_nb ** 2 + h_cb ** 2), 100.0)
+
+
+def h_evap_bertsch2009(x, G, Di, ref, P, q_flux=5000.0, **kw):
+    """
+    Bertsch et al. (2009) — Mini/micro channel evaporation.
+    h_tp = S·h_nb + F·h_conv_tp
+
+    h_conv_tp = h_l·(1-x) + h_v·x  (liquid/vapor weighted average)
+    S = f(Co_conf) — suppression, decreases with Re
+    F = 1 + a·(Co_conf) — enhancement from confined bubble
+    """
+    x = max(0.001, min(x, 0.999))
+    Dh = kw.get("Dh", Di)
+    rho_l = ref.rho_l(P); rho_v = ref.rho_v(P)
+    mu_l = ref.mu_l(P); mu_v = ref.mu_v(P)
+    k_l = ref.k_l(P); k_v = ref.k_v(P)
+    Pr_l = ref.Pr_l(P); Pr_v = ref.Pr_v(P)
+    P_r = ref.P_r(P)
+    h_fg = ref.h_fg(P); sigma_val = ref.sigma(P)
+
+    # Confinement number
+    Co_conf = (sigma_val / (9.81 * max(rho_l - rho_v, 0.1) * Dh ** 2)) ** 0.5 \
+        if Dh > 0 else 1.0
+
+    # Single-phase liquid & vapor HTC
+    Re_l = max(G * (1 - x) * Dh / mu_l, 100)
+    Re_v = max(G * x * Dh / mu_v, 100)
+    h_l = 0.023 * Re_l ** 0.8 * Pr_l ** 0.4 * k_l / Dh
+    h_v = 0.023 * Re_v ** 0.8 * Pr_v ** 0.4 * k_v / Dh
+
+    # Two-phase convective: weighted average
+    h_conv_tp = h_l * (1 - x) + h_v * x
+
+    # Pool boiling (Cooper 1984)
+    M_mol = 44.0
+    try:
+        import CoolProp.CoolProp as CP
+        M_mol = CP.PropsSI("M", ref.fluid) * 1000
+    except: pass
+    log_Pr = -math.log10(max(P_r, 1e-6))
+    h_nb = 55.0 * P_r ** 0.12 * max(log_Pr, 0.01) ** (-0.55) * \
+           M_mol ** (-0.5) * max(q_flux, 100) ** 0.67
+
+    # Suppression factor: decreases as Re increases
+    Re_tp = G * Dh / mu_l
+    S = (1 - x) / (1 + 2.56e-6 * Re_tp ** 1.17)
+    S = max(S, 0.01)
+
+    # Enhancement factor: confined bubble promotes convection
+    F = 1 + 80 * (x ** 2 - x ** 6) * math.exp(-0.6 * Co_conf)
+
+    h_tp = S * h_nb + F * h_conv_tp
+    return max(h_tp, 100.0)
+
+
+def h_evap_sun_mishima2009(x, G, Di, ref, P, q_flux=5000.0, **kw):
+    """
+    Sun & Mishima (2009) — Modified Lazarek-Black for mini/micro channels.
+    Based on 2505 data points, Dh = 0.21~6.5 mm.
+
+    h_tp = 6 × Re_l^1.05 × Bo^0.54 × (We_l)^(-0.191) × (ρ_l/ρ_v)^(-0.142) × k_l/Dh
+
+    where Re_l = G(1-x)Dh/μ_l, We_l = G²(1-x)²Dh/(ρ_l·σ)
+    """
+    x = max(0.001, min(x, 0.999))
+    Dh = kw.get("Dh", Di)
+    rho_l = ref.rho_l(P); rho_v = ref.rho_v(P)
+    mu_l = ref.mu_l(P); k_l = ref.k_l(P)
+    h_fg = ref.h_fg(P); sigma_val = ref.sigma(P)
+
+    Re_l = max(G * (1 - x) * Dh / mu_l, 10)
+    Bo = max(q_flux / (G * h_fg), 1e-8) if (G * h_fg) > 0 else 1e-6
+    We_l = G ** 2 * (1 - x) ** 2 * Dh / (rho_l * sigma_val) if (rho_l * sigma_val) > 0 else 100
+    rho_ratio = rho_l / max(rho_v, 0.1)
+
+    Nu = 6.0 * Re_l ** 1.05 * Bo ** 0.54 * max(We_l, 0.01) ** (-0.191) * rho_ratio ** (-0.142)
+
+    h = Nu * k_l / Dh
+    return max(h, 100.0)
 
 
 # ── Dryout model ──
@@ -2119,6 +2220,51 @@ def h_cond_kim_mudawar_2012(x, G, Dh, ref, P, **kw):
     return max(h_slug, 100.0)
 
 
+def h_cond_koyama2003(x, G, Di, ref, P, **kw):
+    """
+    Koyama et al. (2003) — Multi-port mini-channel condensation.
+    h = √(h_forced² + h_grav²)
+
+    h_forced: shear-driven (annular film) — dominates at high x
+    h_grav: gravity-driven (film drainage) — dominates at low x
+
+    Validated for R134a in Dh = 0.8~1.11mm multi-port tubes.
+    """
+    x = max(0.001, min(x, 0.999))
+    Dh = kw.get("Dh", Di)
+    rho_l = ref.rho_l(P); rho_v = ref.rho_v(P)
+    mu_l = ref.mu_l(P); mu_v = ref.mu_v(P)
+    k_l = ref.k_l(P); Pr_l = ref.Pr_l(P)
+    h_fg = ref.h_fg(P)
+    g = 9.81
+
+    # Void fraction (Zivi 1964 — simple slip-ratio model)
+    Sr = (rho_l / max(rho_v, 0.1)) ** (1.0 / 3.0)
+    alpha_void = 1.0 / (1.0 + Sr * (1 - x) / max(x, 0.001) * rho_v / rho_l)
+    alpha_void = max(0.01, min(alpha_void, 0.999))
+
+    # Liquid Reynolds number (annular film)
+    Re_l = max(G * (1 - x) * Dh / mu_l, 10)
+
+    # Lockhart-Martinelli
+    Xtt = ref.Xtt(x, P)
+
+    # Two-phase multiplier (Koyama)
+    phi_v_sq = 1 + 21 * (1 - math.exp(-0.319 * Dh * 1000)) / max(Xtt, 0.01) + 1 / max(Xtt ** 2, 1e-6)
+
+    # Forced convection component
+    f_l = 0.079 / max(Re_l, 10) ** 0.25 if Re_l > 0 else 0.01
+    h_forced = 0.0152 * Re_l ** 0.77 * Pr_l ** (1.0 / 3.0) * phi_v_sq ** 0.5 * k_l / Dh
+
+    # Gravity component (film condensation in tube)
+    Ga = g * rho_l * (rho_l - rho_v) * Dh ** 3 / mu_l ** 2 if mu_l > 0 else 1e10
+    Ja_inv = h_fg / (ref.cp_l(P) * max(kw.get("dT_wall", 5.0), 0.5))  # inverse Jakob
+    h_grav = 0.725 * (Ga * Pr_l * Ja_inv) ** 0.25 * alpha_void ** (-0.5) * k_l / Dh
+
+    h = math.sqrt(h_forced ** 2 + h_grav ** 2)
+    return max(h, 100.0)
+
+
 # ── SINGLE PHASE ──
 
 def h_single_gnielinski(Re, Pr, k, Di):
@@ -2137,6 +2283,8 @@ _EVAP_DISPATCH = {
     "gungor_winterton1986": h_evap_gungor_winterton1986,
     "kandlikar1990": h_evap_kandlikar1990,
     "kim_mudawar2013": h_evap_kim_mudawar_2013,
+    "bertsch2009": h_evap_bertsch2009,
+    "sun_mishima2009": h_evap_sun_mishima2009,
 }
 
 _COND_DISPATCH = {
@@ -2144,6 +2292,7 @@ _COND_DISPATCH = {
     "cavallini2006": h_cond_cavallini2006,
     "dobson_chato1998": h_cond_dobson_chato1998,
     "kim_mudawar2012": h_cond_kim_mudawar_2012,
+    "koyama2003": h_cond_koyama2003,
 }
 
 
@@ -2158,7 +2307,6 @@ def compute_h_evap(corr_id, x, G, Di, ref, P, q_flux=5000.0, **kw):
     if kw.get("apply_dryout", True) and x > 0.5:
         factor, x_di, x_de = dryout_factor(x, G, Di, ref, P)
         if factor < 1.0:
-            # Vapor-phase h for dryout region
             T_sat = ref.T_sat(P)
             pv = ref.props_single(T_sat + 2.0, P)
             h_v = h_single_gnielinski(G * Di / pv["mu"], pv["Pr"], pv["k"], Di)
@@ -2175,23 +2323,35 @@ def compute_h_cond(corr_id, x, G, Di, ref, P, **kw):
 
 
 def recommend_ref_correlation(mode, x, G, Di, hx_type="FT"):
-    """Recommend best refrigerant-side correlation based on quality and geometry."""
+    """Recommend best refrigerant-side correlation based on quality, geometry, and HX type."""
     if mode == "evap":
         if hx_type == "MCHX" or Di < 0.003:
-            return "kim_mudawar2013"
-        if x < 0.3:
-            return "chen1966"  # nucleate boiling dominant
-        elif x < 0.8:
-            return "gungor_winterton1986"  # mixed region
+            # MCHX: surface tension dominant, confined bubble
+            if x < 0.3:
+                return "bertsch2009"      # confined bubble, nucleate boiling
+            elif x < 0.7:
+                return "kim_mudawar2013"  # best overall for mini-ch
+            else:
+                return "sun_mishima2009"  # We-based, high quality
         else:
-            return "kandlikar1990"  # high quality
+            # FT: gravity dominant, conventional tube
+            if x < 0.3:
+                return "chen1966"               # nucleate boiling dominant
+            elif x < 0.8:
+                return "gungor_winterton1986"    # mixed region
+            else:
+                return "kandlikar1990"           # high quality
     else:  # cond
         if hx_type == "MCHX" or Di < 0.003:
-            return "kim_mudawar2012"
-        if x > 0.5:
-            return "shah1979"  # annular, Shah is good
+            if x < 0.4:
+                return "koyama2003"       # gravity term important at low x
+            else:
+                return "kim_mudawar2012"  # annular shear dominant
         else:
-            return "cavallini2006"  # stratified, Cavallini better
+            if x > 0.5:
+                return "shah1979"         # annular, Shah is good
+            else:
+                return "cavallini2006"    # stratified, Cavallini better
 
 
 # ====================================================================
@@ -2273,9 +2433,8 @@ def select_correlations(hx_type, Di, fin_type="plain", Pt=0.0254, Pl=0.022):
     return result
 
 
-def get_available_ref_correlations(mode):
-    """Get available refrigerant correlations for evap or cond."""
-    if mode == "evap":
-        return list(REFSIDE_EVAP_CORRELATIONS.keys())
-    else:
-        return list(REFSIDE_COND_CORRELATIONS.keys())
+def get_available_ref_correlations(mode, hx_type="FT"):
+    """Get available refrigerant correlations filtered by mode and hx_type."""
+    registry = REFSIDE_EVAP_CORRELATIONS if mode == "evap" else REFSIDE_COND_CORRELATIONS
+    return [cid for cid, info in registry.items()
+            if hx_type in info.get("hx_type", ["FT", "MCHX"])]
