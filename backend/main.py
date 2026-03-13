@@ -19,6 +19,8 @@ from models.correlations import (
     validate_correlation, build_spec_values, build_mchx_spec_values,
     FSIDE_CORRELATIONS, get_available_f_correlations,
     recommend_f_correlation,
+    REFSIDE_EVAP_CORRELATIONS, REFSIDE_COND_CORRELATIONS,
+    get_available_ref_correlations,
 )
 
 app = FastAPI(
@@ -119,6 +121,8 @@ class SimRequest(BaseModel):
     # Correlation selection (None = auto-recommend)
     air_j_corr: Optional[str] = Field(None, description="Air-side j-factor correlation ID. None = auto.")
     air_f_corr: Optional[str] = Field(None, description="Air-side f-factor correlation ID. None = auto.")
+    evap_corr: Optional[str] = Field(None, description="Evaporation correlation ID. None = auto.")
+    cond_corr: Optional[str] = Field(None, description="Condensation correlation ID. None = auto.")
 
     # Geometry
     ft_spec: Optional[FTSpecInput] = None
@@ -163,6 +167,7 @@ class SimResponse(BaseModel):
     correlations_used: Dict
     correlation_recommendation: Dict = {}
     f_recommendation: Dict = {}
+    convergence: Dict = {}
     segments: List[SegmentOut]
     error: str = ""
 
@@ -374,6 +379,12 @@ def simulate(req: SimRequest):
         else:
             solver._f_corr_id = f_rec["recommended"]
 
+        # Refrigerant-side correlation selection
+        if req.evap_corr:
+            solver.corr["evap"] = req.evap_corr
+        if req.cond_corr:
+            solver.corr["cond"] = req.cond_corr
+
         result = solver.solve()
 
         # Build segment output
@@ -416,6 +427,7 @@ def simulate(req: SimRequest):
             correlations_used=result.correlations_used,
             correlation_recommendation=rec,
             f_recommendation=f_rec,
+            convergence=result.convergence,
             segments=seg_out,
             error=result.error,
         )
@@ -453,6 +465,17 @@ def get_circuit_presets(Nr: int = 4, Nt: int = 4, flow: str = "counter"):
         except:
             pass
     return {"Nr": Nr, "Nt": Nt, "flow": flow, "presets": presets}
+
+
+@app.get("/ref_correlations")
+def get_ref_correlations(mode: str = "evap"):
+    """Get available refrigerant-side correlations."""
+    if mode == "evap":
+        return {"mode": mode, "available": list(REFSIDE_EVAP_CORRELATIONS.keys()),
+                "details": REFSIDE_EVAP_CORRELATIONS}
+    else:
+        return {"mode": mode, "available": list(REFSIDE_COND_CORRELATIONS.keys()),
+                "details": REFSIDE_COND_CORRELATIONS}
 
 
 if __name__ == "__main__":

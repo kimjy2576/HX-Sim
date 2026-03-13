@@ -1735,24 +1735,208 @@ def f_factor_chang_wang_1997(Re_Lp, Lp, theta, Fp):
 
 
 # ====================================================================
-# REFRIGERANT-SIDE (unchanged from original)
+# REFRIGERANT-SIDE CORRELATION REGISTRY + IMPLEMENTATIONS
 # ====================================================================
 
-def h_evap_chen1966(x, G, Di, ref, P):
-    """Chen (1966) modified — h_tp = F × h_l × C_nb, q''-independent."""
+REFSIDE_EVAP_CORRELATIONS = {
+    "chen1966": {
+        "name": "Chen (1966) — Original",
+        "ref": "I&EC Proc. Des. Dev. 5(3), 322-329",
+        "note": "h=F·h_l + S·h_nb. 원본 복원(S·h_nb 포함). x<0.3 핵비등 정확.",
+        "x_range": [0.01, 0.95],
+    },
+    "gungor_winterton1986": {
+        "name": "Gungor & Winterton (1986)",
+        "ref": "IJHMT 29(3), 351-358",
+        "note": "E·h_l + S·h_pool. 0.1<x<0.8 혼합영역 정확. 3693 data.",
+        "x_range": [0.01, 0.95],
+    },
+    "kandlikar1990": {
+        "name": "Kandlikar (1990)",
+        "ref": "ASME J. Heat Transfer 112, 219-228",
+        "note": "Co/Bo 기반 2영역. 냉매별 Ffl 계수. 광범위 검증.",
+        "x_range": [0.01, 0.95],
+    },
+    "kim_mudawar2013": {
+        "name": "Kim & Mudawar (2013)",
+        "ref": "IJHMT 64, 928-941",
+        "note": "미니/마이크로 채널 전용. h=√(h_nb²+h_cb²). Dh<3mm.",
+        "x_range": [0.01, 0.95],
+    },
+}
+
+REFSIDE_COND_CORRELATIONS = {
+    "shah1979": {
+        "name": "Shah (1979)",
+        "ref": "IJHMT 22, 547-556",
+        "note": "h=h_lo·[(1-x)^0.8 + 3.8x^0.76(1-x)^0.04/Pr^0.38]. 범용.",
+        "x_range": [0.05, 0.99],
+    },
+    "cavallini2006": {
+        "name": "Cavallini et al. (2006)",
+        "ref": "IJHMT 49, 3309-3320",
+        "note": "Flow regime 자동 판별 (ΔT-independent/dependent). 저건도 정확.",
+        "x_range": [0.01, 0.99],
+    },
+    "dobson_chato1998": {
+        "name": "Dobson & Chato (1998)",
+        "ref": "ASME J. Heat Transfer 120, 52-60",
+        "note": "Annular + stratified-wavy 분리 모델. 수평관 응축.",
+        "x_range": [0.05, 0.99],
+    },
+    "kim_mudawar2012": {
+        "name": "Kim & Mudawar (2012)",
+        "ref": "IJHMT 55, 3246-3261",
+        "note": "미니/마이크로 채널. Annular/slug 자동 분기. Dh<3mm.",
+        "x_range": [0.01, 0.99],
+    },
+}
+
+
+# ── EVAPORATION CORRELATIONS ──
+
+def h_evap_chen1966(x, G, Di, ref, P, q_flux=5000.0, **kw):
+    """
+    Chen (1966) ORIGINAL — h_tp = F·h_l + S·h_nb
+
+    h_l: Dittus-Boelter (liquid-only)
+    F: Reynolds number factor (convective enhancement)
+    S: Suppression factor (nucleate boiling suppressed at high Re)
+    h_nb: Forster-Zuber pool boiling (simplified Cooper)
+    """
     x = max(0.001, min(x, 0.999))
-    mu_l = ref.mu_l(P); k_l = ref.k_l(P); Pr_l = ref.Pr_l(P); P_r = ref.P_r(P)
+    mu_l = ref.mu_l(P); k_l = ref.k_l(P); Pr_l = ref.Pr_l(P)
+    P_r = ref.P_r(P); rho_l = ref.rho_l(P); rho_v = ref.rho_v(P)
+    h_fg = ref.h_fg(P); sigma_val = ref.sigma(P)
+    cp_l = ref.cp_l(P); T_sat = ref.T_sat(P)
+
     Re_l = max(G * (1 - x) * Di / mu_l, 100)
     h_l = 0.023 * Re_l ** 0.8 * Pr_l ** 0.4 * k_l / Di
+
+    # Lockhart-Martinelli parameter
     Xtt = ref.Xtt(x, P)
     inv_Xtt = 1.0 / max(Xtt, 1e-10)
-    F = 2.35 * (0.213 + inv_Xtt) ** 0.736 if inv_Xtt > 0.1 else 1.0
-    C_nb = 1.0 + (1 - x) * P_r ** 0.4
-    return max(F * h_l * C_nb, 100.0)
+
+    # F factor (Chen)
+    if inv_Xtt > 0.1:
+        F = 2.35 * (0.213 + inv_Xtt) ** 0.736
+    else:
+        F = 1.0
+    F = max(F, 1.0)
+
+    # S factor (suppression)
+    Re_tp = Re_l * F ** 1.25
+    S = 1.0 / (1.0 + 2.53e-6 * Re_tp ** 1.17)
+
+    # h_nb: Cooper (1984) pool boiling (simplified, no surface roughness)
+    # h_nb = 55 × P_r^(0.12) × (-log10(P_r))^(-0.55) × M^(-0.5) × q''^0.67
+    # Simplified: use Forster-Zuber style scaling
+    M_mol = 44.0  # approximate molecular weight
+    try:
+        import CoolProp.CoolProp as CP
+        M_mol = CP.PropsSI("M", ref.fluid) * 1000  # kg/mol → g/mol
+    except:
+        pass
+    log_Pr = -math.log10(max(P_r, 1e-6))
+    h_pool = 55.0 * P_r ** 0.12 * max(log_Pr, 0.01) ** (-0.55) * \
+             M_mol ** (-0.5) * max(q_flux, 100) ** 0.67
+
+    h_tp = F * h_l + S * h_pool
+    return max(h_tp, 100.0)
 
 
-def h_evap_kim_mudawar_2013(x, G, Dh, q_flux, ref, P, P_H=1.0, P_F=1.0):
-    """Kim & Mudawar (2013) — h_tp = √(h_nb² + h_cb²)."""
+def h_evap_gungor_winterton1986(x, G, Di, ref, P, q_flux=5000.0, **kw):
+    """
+    Gungor & Winterton (1986) — h_tp = E·h_l + S·h_pool
+
+    E = 1 + 24000·Bo^1.16 + 1.37·(1/Xtt)^0.86
+    S = 1 / (1 + 1.15e-6 · E² · Re_l^1.17)
+
+    Validated against 3693 data points.
+    """
+    x = max(0.001, min(x, 0.999))
+    mu_l = ref.mu_l(P); k_l = ref.k_l(P); Pr_l = ref.Pr_l(P)
+    P_r = ref.P_r(P); h_fg = ref.h_fg(P)
+
+    Re_l = max(G * (1 - x) * Di / mu_l, 100)
+    h_l = 0.023 * Re_l ** 0.8 * Pr_l ** 0.4 * k_l / Di
+
+    Bo = max(q_flux / (G * h_fg), 1e-8) if (G * h_fg) > 0 else 1e-6
+    Xtt = ref.Xtt(x, P)
+    inv_Xtt = 1.0 / max(Xtt, 1e-10)
+
+    # Enhancement factor
+    E = 1.0 + 24000 * Bo ** 1.16 + 1.37 * inv_Xtt ** 0.86
+
+    # Suppression factor
+    S = 1.0 / (1.0 + 1.15e-6 * E ** 2 * Re_l ** 1.17)
+
+    # Pool boiling (Cooper 1984)
+    M_mol = 44.0
+    try:
+        import CoolProp.CoolProp as CP
+        M_mol = CP.PropsSI("M", ref.fluid) * 1000
+    except:
+        pass
+    log_Pr = -math.log10(max(P_r, 1e-6))
+    h_pool = 55.0 * P_r ** 0.12 * max(log_Pr, 0.01) ** (-0.55) * \
+             M_mol ** (-0.5) * max(q_flux, 100) ** 0.67
+
+    h_tp = E * h_l + S * h_pool
+    return max(h_tp, 100.0)
+
+
+def h_evap_kandlikar1990(x, G, Di, ref, P, q_flux=5000.0, **kw):
+    """
+    Kandlikar (1990) — Co/Bo based, two-region model.
+
+    Convection number: Co = [(1-x)/x]^0.8 × (ρ_v/ρ_l)^0.5
+    Boiling number: Bo = q'' / (G·h_fg)
+
+    h_tp = max(h_NBD, h_CBD) × h_lo
+
+    NBD (nucleate boiling dominant):
+      h_NBD = 0.6683·Co^(-0.2)·(1-x)^0.8·f₂(Ffl) + 1058·Bo^0.7·(1-x)^0.8·Ffl
+    CBD (convective boiling dominant):
+      h_CBD = 1.136·Co^(-0.9)·(1-x)^0.8·f₂(Ffl) + 667.2·Bo^0.7·(1-x)^0.8·Ffl
+    """
+    x = max(0.001, min(x, 0.999))
+    mu_l = ref.mu_l(P); k_l = ref.k_l(P); Pr_l = ref.Pr_l(P)
+    rho_l = ref.rho_l(P); rho_v = ref.rho_v(P); h_fg = ref.h_fg(P)
+
+    Re_lo = max(G * Di / mu_l, 100)
+    h_lo = 0.023 * Re_lo ** 0.8 * Pr_l ** 0.4 * k_l / Di
+
+    Co = ((1 - x) / x) ** 0.8 * (rho_v / rho_l) ** 0.5
+    Bo = max(q_flux / (G * h_fg), 1e-8) if (G * h_fg) > 0 else 1e-6
+
+    # Fluid-surface parameter Ffl (depends on refrigerant)
+    Ffl = 1.0  # default
+    fluid_upper = ref.fluid.upper() if hasattr(ref, 'fluid') else ""
+    ffl_map = {"R134A": 1.63, "R410A": 1.0, "R22": 2.2, "R290": 1.1,
+               "R32": 1.0, "R1234YF": 1.0, "R1234ZE(E)": 1.0, "R404A": 1.55}
+    for k, v in ffl_map.items():
+        if k in fluid_upper:
+            Ffl = v; break
+
+    f2 = 0.0  # for vertical: f2=0, for horizontal: f2 depends on Fr
+    # Horizontal tube correction
+    Fr_lo = G ** 2 / (rho_l ** 2 * 9.81 * Di) if (rho_l > 0 and Di > 0) else 100
+    if Fr_lo < 0.04:
+        f2 = (25 * Fr_lo) ** 0.3
+    else:
+        f2 = 1.0
+
+    ox8 = (1 - x) ** 0.8
+
+    h_NBD = (0.6683 * Co ** (-0.2) * ox8 * f2 + 1058.0 * Bo ** 0.7 * ox8 * Ffl) * h_lo
+    h_CBD = (1.136 * Co ** (-0.9) * ox8 * f2 + 667.2 * Bo ** 0.7 * ox8 * Ffl) * h_lo
+
+    return max(max(h_NBD, h_CBD), 100.0)
+
+
+def h_evap_kim_mudawar_2013(x, G, Dh, q_flux, ref, P, P_H=1.0, P_F=1.0, **kw):
+    """Kim & Mudawar (2013) — mini/micro channel. h_tp = √(h_nb² + h_cb²)."""
     x = max(0.001, min(x, 0.999))
     rho_l = ref.rho_l(P); rho_v = ref.rho_v(P); mu_l = ref.mu_l(P)
     k_l = ref.k_l(P); Pr_l = ref.Pr_l(P); h_fg = ref.h_fg(P)
@@ -1769,18 +1953,155 @@ def h_evap_kim_mudawar_2013(x, G, Dh, q_flux, ref, P, P_H=1.0, P_F=1.0):
     return max(math.sqrt(h_nb ** 2 + h_cb ** 2), 100.0)
 
 
-def h_cond_shah1979(x, G, Di, ref, P):
-    """Shah (1979) — h_cond = h_lo × x^0.8 × (1 + 3.8/Z^0.95)."""
+# ── Dryout model ──
+
+def dryout_factor(x, G, Di, ref, P):
+    """
+    Dryout quality estimation and h reduction.
+    Based on Wojtan et al. (2005) simplified approach.
+
+    x_di: dryout inception quality
+    x_de: dryout completion quality
+    Between x_di and x_de: linear interpolation of h
+    Above x_de: vapor-phase h only
+    """
+    rho_l = ref.rho_l(P); rho_v = ref.rho_v(P)
+    sigma_val = ref.sigma(P); h_fg = ref.h_fg(P)
+    Di_mm = Di * 1000
+
+    # Simplified dryout inception (Wojtan 2005 / Thome 2004)
+    # x_di depends on G, Di, fluid — higher G → higher x_di
+    We_l = G ** 2 * Di / (rho_l * sigma_val) if (rho_l * sigma_val) > 0 else 100
+    # Approximate: x_di ≈ 0.58 + 0.002×(G-200) for Di~5-10mm
+    x_di = 0.80 + 0.15 * math.tanh((G - 300) / 200)
+    x_di = max(0.5, min(x_di, 0.95))
+
+    x_de = min(x_di + 0.10, 0.99)  # dryout completion
+
+    if x <= x_di:
+        return 1.0, x_di, x_de  # no dryout
+    elif x >= x_de:
+        return 0.0, x_di, x_de  # full dryout → use vapor h
+    else:
+        # Linear interpolation
+        frac = (x - x_di) / (x_de - x_di)
+        return 1.0 - frac, x_di, x_de
+
+
+# ── CONDENSATION CORRELATIONS ──
+
+def h_cond_shah1979(x, G, Di, ref, P, **kw):
+    """Shah (1979) — original form with corrected expression."""
     x = max(0.001, min(x, 0.999))
     mu_l = ref.mu_l(P); k_l = ref.k_l(P); Pr_l = ref.Pr_l(P); P_r = ref.P_r(P)
     Re_lo = max(G * Di / mu_l, 100)
     h_lo = 0.023 * Re_lo ** 0.8 * Pr_l ** 0.4 * k_l / Di
-    Z = ((1 / x - 1) ** 0.8) * P_r ** 0.4
-    return max(h_lo * x ** 0.8 * (1 + 3.8 / max(Z, 0.01) ** 0.95), 100.0)
+
+    # Shah correlation: h = h_lo × [(1-x)^0.8 + 3.8×x^0.76×(1-x)^0.04 / P_r^0.38]
+    h = h_lo * ((1 - x) ** 0.8 + 3.8 * x ** 0.76 * (1 - x) ** 0.04 / max(P_r, 0.001) ** 0.38)
+    return max(h, 100.0)
 
 
-def h_cond_kim_mudawar_2012(x, G, Dh, ref, P):
-    """Kim & Mudawar (2012) — annular vs slug/bubbly auto-branching."""
+def h_cond_cavallini2006(x, G, Di, ref, P, **kw):
+    """
+    Cavallini et al. (2006) — Flow regime dependent.
+
+    Two regimes separated by J_G_T (dimensionless vapor velocity transition):
+    - ΔT-independent (annular): high vapor velocity
+    - ΔT-dependent (stratified/slug): low vapor velocity, gravity effects
+
+    J_G = x·G / [g·Di·ρ_v·(ρ_l-ρ_v)]^0.5
+    J_G_T = [(7.5 / (4.3·Xtt^1.111 + 1))^(-3) + C_T^(-3)]^(-1/3)
+    """
+    x = max(0.001, min(x, 0.999))
+    rho_l = ref.rho_l(P); rho_v = ref.rho_v(P)
+    mu_l = ref.mu_l(P); mu_v = ref.mu_v(P)
+    k_l = ref.k_l(P); Pr_l = ref.Pr_l(P)
+    cp_l = ref.cp_l(P); h_fg = ref.h_fg(P)
+
+    g = 9.81
+    Re_lo = max(G * Di / mu_l, 100)
+    h_lo = 0.023 * Re_lo ** 0.8 * Pr_l ** 0.4 * k_l / Di
+
+    Xtt = ref.Xtt(x, P)
+
+    # Dimensionless vapor velocity
+    denom = max(g * Di * rho_v * (rho_l - rho_v), 1e-6) ** 0.5
+    J_G = x * G / denom
+
+    # Transition criterion
+    C_T = 1.6 if rho_l / rho_v > 6 else 2.6
+    J_G_T_inner = (7.5 / (4.3 * Xtt ** 1.111 + 1)) ** (-3) + C_T ** (-3)
+    J_G_T = J_G_T_inner ** (-1.0 / 3.0)
+
+    if J_G >= J_G_T:
+        # ΔT-independent regime (annular)
+        # h_A = h_lo × [1 + 1.128·x^0.817·(ρ_l/ρ_v)^0.3685·(μ_l/μ_v)^0.2363·(1-μ_v/μ_l)^2.144·Pr_l^(-0.1)]
+        mu_ratio = mu_l / mu_v if mu_v > 0 else 10
+        rho_ratio = rho_l / rho_v if rho_v > 0 else 10
+        h_A = h_lo * (1 + 1.128 * x ** 0.817 * rho_ratio ** 0.3685 *
+                       mu_ratio ** 0.2363 * max(1 - mu_v / mu_l, 0.01) ** 2.144 *
+                       Pr_l ** (-0.1))
+        return max(h_A, 100.0)
+    else:
+        # ΔT-dependent regime (stratified/wavy)
+        # h_strat from Nusselt film condensation + forced convection
+        h_A_T = h_lo * (1 + 1.128 * x ** 0.817 * (rho_l / max(rho_v, 0.1)) ** 0.3685 *
+                         (mu_l / max(mu_v, 1e-7)) ** 0.2363 *
+                         max(1 - mu_v / mu_l, 0.01) ** 2.144 * Pr_l ** (-0.1))
+
+        # Film condensation contribution
+        T_sat = ref.T_sat(P)
+        dT_film = max(kw.get("dT_wall", 5.0), 0.5)  # wall subcooling estimate
+        h_strat = 0.725 * (g * rho_l * (rho_l - rho_v) * k_l ** 3 * h_fg /
+                           (mu_l * Di * dT_film)) ** 0.25 if (mu_l * Di * dT_film) > 0 else h_lo
+
+        # Blend at transition: use J_G/J_G_T ratio
+        ratio = J_G / max(J_G_T, 1e-6)
+        h_D = h_A_T * ratio ** 0.8 + h_strat * (1 - ratio ** 0.8)
+        return max(h_D, 100.0)
+
+
+def h_cond_dobson_chato1998(x, G, Di, ref, P, **kw):
+    """
+    Dobson & Chato (1998) — Horizontal tube condensation.
+    Annular flow (x > x_transition) + Stratified-wavy (x < x_transition).
+    """
+    x = max(0.001, min(x, 0.999))
+    rho_l = ref.rho_l(P); rho_v = ref.rho_v(P)
+    mu_l = ref.mu_l(P); k_l = ref.k_l(P); Pr_l = ref.Pr_l(P)
+    g = 9.81
+
+    Re_l = max(G * (1 - x) * Di / mu_l, 100)
+    Xtt = ref.Xtt(x, P)
+
+    # Froude number for transition
+    Fr_so = 0.025 * Re_l ** 1.59 * (1.0 / max(1 + 1.09 * Xtt ** 0.039, 1)) / \
+            max((rho_l / rho_v) ** 1.5 * (9.81 * Di ** 3 * rho_l ** 2 / mu_l ** 2), 1)
+
+    # Annular flow correlation (Dobson)
+    h_l = 0.023 * Re_l ** 0.8 * Pr_l ** 0.4 * k_l / Di
+    h_ann = h_l * (2.22 / max(Xtt, 0.01) ** 0.89 + 1)
+
+    # Stratified-wavy correction for low x
+    Ga = g * rho_l * (rho_l - rho_v) * Di ** 3 / mu_l ** 2 if mu_l > 0 else 1e10
+    Ja = cp_l = ref.cp_l(P)  # just use cp_l as proxy for Ja effect
+
+    # Simple: use annular for x > 0.3, stratified blend below
+    if x > 0.3:
+        return max(h_ann, 100.0)
+    else:
+        # Nusselt film + forced convection blend
+        h_fg = ref.h_fg(P)
+        dT = max(kw.get("dT_wall", 5.0), 0.5)
+        h_film = 0.555 * (g * rho_l * (rho_l - rho_v) * k_l ** 3 * h_fg /
+                          (mu_l * Di * dT)) ** 0.25 if (mu_l * Di * dT) > 0 else h_l
+        w = x / 0.3
+        return max(w * h_ann + (1 - w) * h_film, 100.0)
+
+
+def h_cond_kim_mudawar_2012(x, G, Dh, ref, P, **kw):
+    """Kim & Mudawar (2012) — mini/micro channel condensation."""
     x = max(0.001, min(x, 0.999))
     rho_l = ref.rho_l(P); rho_v = ref.rho_v(P)
     mu_l = ref.mu_l(P); mu_v = ref.mu_v(P)
@@ -1798,8 +2119,10 @@ def h_cond_kim_mudawar_2012(x, G, Dh, ref, P):
     return max(h_slug, 100.0)
 
 
+# ── SINGLE PHASE ──
+
 def h_single_gnielinski(Re, Pr, k, Di):
-    """Gnielinski (1976) — Re > 2300 turbulent, else laminar."""
+    """Gnielinski (1976) — turbulent + laminar."""
     if Re < 2300:
         return 3.66 * k / Di
     f = (0.790 * math.log(Re) - 1.64) ** (-2)
@@ -1807,22 +2130,94 @@ def h_single_gnielinski(Re, Pr, k, Di):
     return Nu * k / Di
 
 
+# ── DISPATCHERS ──
+
+_EVAP_DISPATCH = {
+    "chen1966": h_evap_chen1966,
+    "gungor_winterton1986": h_evap_gungor_winterton1986,
+    "kandlikar1990": h_evap_kandlikar1990,
+    "kim_mudawar2013": h_evap_kim_mudawar_2013,
+}
+
+_COND_DISPATCH = {
+    "shah1979": h_cond_shah1979,
+    "cavallini2006": h_cond_cavallini2006,
+    "dobson_chato1998": h_cond_dobson_chato1998,
+    "kim_mudawar2012": h_cond_kim_mudawar_2012,
+}
+
+
+def compute_h_evap(corr_id, x, G, Di, ref, P, q_flux=5000.0, **kw):
+    """Compute evaporation h with optional dryout."""
+    fn = _EVAP_DISPATCH.get(corr_id)
+    if fn is None:
+        fn = h_evap_chen1966
+    h = fn(x=x, G=G, Di=Di, ref=ref, P=P, q_flux=q_flux, **kw)
+
+    # Apply dryout reduction
+    if kw.get("apply_dryout", True) and x > 0.5:
+        factor, x_di, x_de = dryout_factor(x, G, Di, ref, P)
+        if factor < 1.0:
+            # Vapor-phase h for dryout region
+            T_sat = ref.T_sat(P)
+            pv = ref.props_single(T_sat + 2.0, P)
+            h_v = h_single_gnielinski(G * Di / pv["mu"], pv["Pr"], pv["k"], Di)
+            h = factor * h + (1 - factor) * h_v
+    return max(h, 50.0)
+
+
+def compute_h_cond(corr_id, x, G, Di, ref, P, **kw):
+    """Compute condensation h."""
+    fn = _COND_DISPATCH.get(corr_id)
+    if fn is None:
+        fn = h_cond_shah1979
+    return max(fn(x=x, G=G, Di=Di, ref=ref, P=P, **kw), 50.0)
+
+
+def recommend_ref_correlation(mode, x, G, Di, hx_type="FT"):
+    """Recommend best refrigerant-side correlation based on quality and geometry."""
+    if mode == "evap":
+        if hx_type == "MCHX" or Di < 0.003:
+            return "kim_mudawar2013"
+        if x < 0.3:
+            return "chen1966"  # nucleate boiling dominant
+        elif x < 0.8:
+            return "gungor_winterton1986"  # mixed region
+        else:
+            return "kandlikar1990"  # high quality
+    else:  # cond
+        if hx_type == "MCHX" or Di < 0.003:
+            return "kim_mudawar2012"
+        if x > 0.5:
+            return "shah1979"  # annular, Shah is good
+        else:
+            return "cavallini2006"  # stratified, Cavallini better
+
+
 # ====================================================================
-# TRANSITION BLENDING (unchanged)
+# TRANSITION BLENDING — updated with dryout
 # ====================================================================
 
 def h_with_transition(x, G, Di, q_flux, ref, P,
-                      mode="evap", hx_type="FT", P_H=1.0, P_F=1.0):
-    """h_i with transition blending at x boundaries."""
+                      mode="evap", hx_type="FT", P_H=1.0, P_F=1.0,
+                      evap_corr=None, cond_corr=None):
+    """h_i with transition blending at x boundaries and dryout."""
     T_sat = ref.T_sat(P)
+
+    # Determine correlation
+    if evap_corr is None:
+        evap_corr = "kim_mudawar2013" if (hx_type == "MCHX" or Di < 0.003) else "chen1966"
+    if cond_corr is None:
+        cond_corr = "kim_mudawar2012" if (hx_type == "MCHX" or Di < 0.003) else "shah1979"
+
     if mode == "evap":
         if 0.0 < x < 0.90:
-            return h_evap_chen1966(x, G, Di, ref, P) if hx_type == "FT" else \
-                   h_evap_kim_mudawar_2013(x, G, Di, q_flux, ref, P, P_H, P_F)
+            return compute_h_evap(evap_corr, x, G, Di, ref, P, q_flux,
+                                  P_H=P_H, P_F=P_F, Dh=Di)
         elif 0.90 <= x <= 1.05:
             x_2ph = min(x, 0.999)
-            h_2ph = h_evap_chen1966(x_2ph, G, Di, ref, P) if hx_type == "FT" else \
-                    h_evap_kim_mudawar_2013(x_2ph, G, Di, q_flux, ref, P, P_H, P_F)
+            h_2ph = compute_h_evap(evap_corr, x_2ph, G, Di, ref, P, q_flux,
+                                   P_H=P_H, P_F=P_F, Dh=Di)
             pv = ref.props_single(T_sat + 1.0, P)
             h_v = h_single_gnielinski(G * Di / pv["mu"], pv["Pr"], pv["k"], Di)
             w = max(0, min((x - 0.90) / 0.15, 1))
@@ -1835,12 +2230,10 @@ def h_with_transition(x, G, Di, q_flux, ref, P,
             return h_single_gnielinski(G * Di / pl["mu"], pl["Pr"], pl["k"], Di)
     else:
         if 0.05 < x < 1.0:
-            return h_cond_shah1979(x, G, Di, ref, P) if hx_type == "FT" else \
-                   h_cond_kim_mudawar_2012(x, G, Di, ref, P)
+            return compute_h_cond(cond_corr, x, G, Di, ref, P, Dh=Di)
         elif 0.0 <= x <= 0.05:
             x_2ph = max(x, 0.001)
-            h_2ph = h_cond_shah1979(x_2ph, G, Di, ref, P) if hx_type == "FT" else \
-                    h_cond_kim_mudawar_2012(x_2ph, G, Di, ref, P)
+            h_2ph = compute_h_cond(cond_corr, x_2ph, G, Di, ref, P, Dh=Di)
             pl = ref.props_single(T_sat - 1.0, P)
             h_sub = h_single_gnielinski(G * Di / pl["mu"], pl["Pr"], pl["k"], Di)
             w = max(0, min((0.05 - x) / 0.05, 1))
@@ -1862,7 +2255,6 @@ def select_correlations(hx_type, Di, fin_type="plain", Pt=0.0254, Pl=0.022):
     result = {"single_phase": "gnielinski"}
     if hx_type == "FT":
         if fin_type == "plain":
-            PtPl = Pt / Pl if Pl > 0 else 1.0
             result["air_j"] = "wang2000_plain"
         elif fin_type == "wavy":
             result["air_j"] = "wang2002_wavy"
@@ -1875,7 +2267,15 @@ def select_correlations(hx_type, Di, fin_type="plain", Pt=0.0254, Pl=0.022):
         result["evap"] = "chen1966"
         result["cond"] = "shah1979"
     elif hx_type == "MCHX":
-        result["air_j"] = "chang_wang2006"  # 91-sample generalization
-        result["evap"] = "kim_mudawar_2013" if Di < 0.003 else "chen1966"
-        result["cond"] = "kim_mudawar_2012" if Di < 0.003 else "shah1979"
+        result["air_j"] = "chang_wang2006"
+        result["evap"] = "kim_mudawar2013" if Di < 0.003 else "chen1966"
+        result["cond"] = "kim_mudawar2012" if Di < 0.003 else "shah1979"
     return result
+
+
+def get_available_ref_correlations(mode):
+    """Get available refrigerant correlations for evap or cond."""
+    if mode == "evap":
+        return list(REFSIDE_EVAP_CORRELATIONS.keys())
+    else:
+        return list(REFSIDE_COND_CORRELATIONS.keys())

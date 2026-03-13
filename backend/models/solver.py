@@ -11,6 +11,7 @@ from .correlations import (
     compute_j_factor, select_correlations, recommend_correlation,
     compute_f_factor, recommend_f_correlation, get_available_f_correlations,
     FSIDE_CORRELATIONS,
+    REFSIDE_EVAP_CORRELATIONS, REFSIDE_COND_CORRELATIONS,
     h_with_transition,
     h_single_gnielinski,
 )
@@ -94,6 +95,7 @@ class SimulationResult:
     segments: List[SegmentResult] = field(default_factory=list)
     row_Q: List[float] = field(default_factory=list)
     correlations_used: Dict = field(default_factory=dict)
+    convergence: Dict = field(default_factory=dict)
     error: str = ""
 
 
@@ -202,9 +204,16 @@ class HXSolver:
                      for _ in range(self.Nt)]
         m_air_cell = m_air / max(self.Nt * Ns, 1)
 
-        seg_dict = {}  # (col, row, seg) → SegmentResult
+        seg_dict = {}
+        max_outer = 10
+        outer_tol_Q = 0.5  # [W] convergence tolerance for total Q
+        outer_tol_T = 0.05  # [K] convergence tolerance for T_air_out
+        Q_prev_outer = 0.0
+        T_air_out_prev = 0.0
+        outer_converged = False
+        outer_history = []
 
-        for outer_iter in range(5):
+        for outer_iter in range(max_outer):
             seg_dict.clear()
             circ_outlets = []
 
@@ -255,6 +264,8 @@ class HXSolver:
 
             # ── Update per-column air temperature profiles ──
             h_fg_water = 2501000.0
+            # Under-relaxation factor for air update (prevents oscillation)
+            omega = 0.5 if outer_iter > 0 else 1.0  # full update on first iter
             for col_idx in range(self.Nt):
                 for seg_idx in range(Ns):
                     T_air_3d[col_idx][seg_idx][0] = inp.T_air_in
@@ -273,12 +284,38 @@ class HXSolver:
                                 h_next = h_cur + Q_seg / m_air_cell
                             W_rem = Q_lat / (m_air_cell * h_fg_water)
                             W_next = max(W_air_3d[col_idx][seg_idx][row_idx] - W_rem, 0)
-                            T_next = self.air.T_from_h_simple(h_next, W_next)
-                            T_air_3d[col_idx][seg_idx][row_idx + 1] = T_next
-                            W_air_3d[col_idx][seg_idx][row_idx + 1] = W_next
+                            T_calc = self.air.T_from_h_simple(h_next, W_next)
+                            # Under-relax: blend new with old
+                            T_old = T_air_3d[col_idx][seg_idx][row_idx + 1]
+                            T_air_3d[col_idx][seg_idx][row_idx + 1] = omega * T_calc + (1 - omega) * T_old
+                            W_air_3d[col_idx][seg_idx][row_idx + 1] = omega * W_next + (1 - omega) * W_air_3d[col_idx][seg_idx][row_idx + 1]
                         else:
                             T_air_3d[col_idx][seg_idx][row_idx + 1] = T_air_3d[col_idx][seg_idx][row_idx]
                             W_air_3d[col_idx][seg_idx][row_idx + 1] = W_air_3d[col_idx][seg_idx][row_idx]
+
+            # ── Check outer convergence ──
+            Q_this = sum(s.Q for s in seg_dict.values())
+            T_air_out_this = sum(T_air_3d[c][s][self.Nr]
+                                 for c in range(self.Nt) for s in range(Ns)) / max(self.Nt * Ns, 1)
+            dQ_outer = abs(Q_this - Q_prev_outer)
+            dT_outer = abs(T_air_out_this - T_air_out_prev)
+            rel_dQ = dQ_outer / max(abs(Q_this), 1.0) * 100  # [%]
+
+            outer_history.append({
+                "iter": outer_iter + 1,
+                "Q": round(Q_this, 2),
+                "dQ": round(dQ_outer, 2),
+                "dQ_pct": round(rel_dQ, 3),
+                "T_air_out": round(T_air_out_this - 273.15, 2),
+                "dT": round(dT_outer, 3),
+            })
+
+            if outer_iter > 0 and dQ_outer < outer_tol_Q and dT_outer < outer_tol_T:
+                outer_converged = True
+                break
+
+            Q_prev_outer = Q_this
+            T_air_out_prev = T_air_out_this
 
         # ── Compile results ──
         all_segments = []
@@ -317,6 +354,19 @@ class HXSolver:
         result.segments = all_segments
         result.row_Q = row_Q
         result.correlations_used = self.corr
+        result.convergence = {
+            "outer_converged": outer_converged,
+            "outer_iterations": outer_iter + 1,
+            "outer_max": max_outer,
+            "outer_tol_Q": outer_tol_Q,
+            "outer_tol_T": outer_tol_T,
+            "final_dQ": outer_history[-1]["dQ"] if outer_history else 0,
+            "final_dQ_pct": outer_history[-1]["dQ_pct"] if outer_history else 0,
+            "final_dT": outer_history[-1]["dT"] if outer_history else 0,
+            "history": outer_history,
+            "seg_converged_pct": round(
+                sum(1 for s in all_segments if s.converged) / max(len(all_segments), 1) * 100, 1),
+        }
 
         # Store circuit info
         self.corr["n_circuits"] = n_circ
@@ -368,6 +418,8 @@ class HXSolver:
                 x=x_ref, G=G_ref, Di=self.Di, q_flux=q_flux_est,
                 ref=ref, P=P_sat, mode=inp.mode,
                 hx_type=inp.hx_type,
+                evap_corr=self.corr.get("evap"),
+                cond_corr=self.corr.get("cond"),
             )
 
             # --- Fin efficiency ---

@@ -154,6 +154,7 @@ function App() {
   const [mchxSpec,setMchxSpec]=useState({...DEFAULT_MCHX});
   const [airCorr,setAirCorr]=useState({mode:"auto",selected:null});
   const [fCorr,setFCorr]=useState({mode:"auto",selected:null});
+  const [refCorr,setRefCorr]=useState({evap:{mode:"auto",selected:null},cond:{mode:"auto",selected:null}});
   const [result,setResult]=useState(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -182,6 +183,8 @@ function App() {
       if(airIn.flowMode==="velocity") body.V_air=airIn.V; else body.CMM=airIn.CMM||18;
       if(airCorr.mode==="manual"&&airCorr.selected) body.air_j_corr=airCorr.selected;
       if(fCorr.mode==="manual"&&fCorr.selected) body.air_f_corr=fCorr.selected;
+      if(refCorr.evap.mode==="manual"&&refCorr.evap.selected) body.evap_corr=refCorr.evap.selected;
+      if(refCorr.cond.mode==="manual"&&refCorr.cond.selected) body.cond_corr=refCorr.cond.selected;
       if(refIn.stateMode==="T") body.T_sat_C=refIn.T_sat; else body.P_sat_kPa=refIn.P_sat;
       if(!refIn.twoPhase&&refIn.T_ref_in!==null) body.T_ref_in_C=refIn.T_ref_in;
       if(hxType==="FT") body.ft_spec=ftSpec; else body.mchx_spec=mchxSpec;
@@ -504,6 +507,66 @@ function App() {
                 ):null;
               })()}
               {/* Fin-type specific parameters */}
+
+              {/* ── Refrigerant-side Correlation ── */}
+              <div style={{borderLeft:`2px solid ${C.accent3}`,paddingLeft:10,marginBottom:6,marginTop:6}}>
+                <div style={{fontSize:9,color:C.accent3,fontWeight:700,marginBottom:4}}>
+                  REFRIGERANT CORRELATION ({mode==="evap"?"증발":"응축"})
+                </div>
+                {(()=>{
+                  const key = mode==="evap"?"evap":"cond";
+                  const corrs = mode==="evap"?{
+                    chen1966:{l:"Chen(1966)",d:"원본 S·h_nb 포함, 저건도 핵비등"},
+                    gungor_winterton1986:{l:"Gungor-W.(1986)",d:"혼합영역(0.1~0.8) 정확"},
+                    kandlikar1990:{l:"Kandlikar(1990)",d:"Co/Bo 기반, Ffl 냉매별"},
+                    kim_mudawar2013:{l:"Kim-M.(2013)",d:"미니채널 전용 Dh<3mm"},
+                  }:{
+                    shah1979:{l:"Shah(1979)",d:"범용, annular 정확"},
+                    cavallini2006:{l:"Cavallini(2006)",d:"Flow regime 자동, 저건도↑"},
+                    dobson_chato1998:{l:"Dobson-C.(1998)",d:"수평관, stratified-wavy"},
+                    kim_mudawar2012:{l:"Kim-M.(2012)",d:"미니채널 전용 Dh<3mm"},
+                  };
+                  const cur = refCorr[key];
+                  return (<>
+                    <div style={{display:"flex",gap:4,marginBottom:4}}>
+                      {["auto","manual"].map(m=>(
+                        <button key={m} onClick={()=>setRefCorr(p=>({...p,[key]:{...p[key],mode:m}}))}
+                          style={{padding:"3px 8px",borderRadius:5,border:"none",cursor:"pointer",
+                            fontSize:9,fontWeight:700,fontFamily:"inherit",
+                            background:cur.mode===m?(m==="auto"?C.accent:C.accent3):C.bg,
+                            color:cur.mode===m?C.bg:C.dim}}>
+                          {m.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                    {cur.mode==="manual"&&(
+                      <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                        {Object.entries(corrs).map(([id,info])=>{
+                          const sel = cur.selected===id;
+                          return (
+                            <button key={id} onClick={()=>setRefCorr(p=>({...p,[key]:{...p[key],selected:id}}))}
+                              style={{textAlign:"left",padding:"5px 8px",borderRadius:6,border:"none",cursor:"pointer",
+                                background:sel?`${C.accent3}22`:C.bg,fontSize:9,fontFamily:"inherit",
+                                color:sel?C.accent3:C.dim}}>
+                              <span style={{fontWeight:700}}>{info.l}</span>
+                              <span style={{fontSize:8,marginLeft:4,opacity:0.7}}>{info.d}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {cur.mode==="auto"&&result?.correlations_used&&(
+                      <div style={{fontSize:10,padding:"4px 8px",borderRadius:5,
+                        background:`${C.accent3}11`,border:`1px solid ${C.accent3}33`}}>
+                        <span style={{fontWeight:700,color:C.accent3}}>⚡</span>{" "}
+                        <span style={{color:C.text,fontWeight:600}}>
+                          {result.correlations_used?.[key]||"auto"}
+                        </span>
+                      </div>
+                    )}
+                  </>);
+                })()}
+              </div>
               {ftSpec.fin_type==="wavy"&&(<>
                 <div style={{borderLeft:`2px solid ${C.warn}`,paddingLeft:10,marginBottom:6}}>
                   <div style={{fontSize:9,color:C.warn,fontWeight:700,marginBottom:4}}>WAVY FIN</div>
@@ -849,6 +912,35 @@ function App() {
                   <Metric label="ΔP_air" value={result.dp_air.toFixed(1)} unit="Pa" color={C.dim}/>
                   <Metric label="RH_out" value={(result.RH_out*100).toFixed(1)} unit="%" color={C.accent2}/>
                 </div>
+                {/* Convergence info */}
+                {result.convergence&&(()=>{
+                  const cv = result.convergence;
+                  const ok = cv.outer_converged;
+                  const clr = ok ? C.success : C.warn;
+                  return (
+                    <div style={{padding:"8px 12px",marginBottom:16,borderRadius:8,
+                      background:`${clr}11`,border:`1px solid ${clr}33`,fontSize:10}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                        <span style={{fontWeight:700,color:clr}}>{ok?"✅ 수렴":"⚠️ 미수렴"}</span>
+                        <span style={{color:C.dim}}>
+                          Outer: {cv.outer_iterations}/{cv.outer_max}회 · ΔQ={cv.final_dQ?.toFixed(2)}W ({cv.final_dQ_pct?.toFixed(2)}%)
+                          · ΔT_air={cv.final_dT?.toFixed(3)}K
+                        </span>
+                        <span style={{color:C.dim}}>· Seg {cv.seg_converged_pct}% 수렴</span>
+                      </div>
+                      {cv.history&&cv.history.length>1&&(
+                        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:4}}>
+                          {cv.history.map((h,i)=>(
+                            <span key={i} style={{background:C.bg,padding:"2px 6px",borderRadius:4,fontSize:9,
+                              color:h.dQ_pct<0.1?C.success:h.dQ_pct<1?C.warn:C.dim}}>
+                              #{h.iter} Q={h.Q.toFixed(0)} ΔQ={h.dQ_pct.toFixed(2)}%
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14,marginBottom:16}}>
                   <div style={{fontSize:11,color:C.accent,fontWeight:700,marginBottom:8,letterSpacing:1}}>CORRELATIONS USED</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:8}}>
