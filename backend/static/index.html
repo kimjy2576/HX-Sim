@@ -150,6 +150,7 @@ function App() {
   const [airIn,setAirIn]=useState({T:35,RH:0.98,flowMode:"CMM",V:2.0,CMM:2.6});
   const [refIn,setRefIn]=useState({fluid:"R290",stateMode:"P",T_sat:null,P_sat:2811,m_ref:16.5,massUnit:"kg/hr",twoPhase:false,x_in:0.2,T_ref_in:92.6});
   const [flow,setFlow]=useState("counter");
+  const [solverCfg,setSolverCfg]=useState({max_outer:30,tol_pct:0.1});
   const [ftSpec,setFtSpec]=useState({...DEFAULT_FT});
   const [mchxSpec,setMchxSpec]=useState({...DEFAULT_MCHX});
   const [airCorr,setAirCorr]=useState({mode:"auto",selected:null});
@@ -188,11 +189,13 @@ function App() {
       if(refIn.stateMode==="T") body.T_sat_C=refIn.T_sat; else body.P_sat_kPa=refIn.P_sat;
       if(!refIn.twoPhase&&refIn.T_ref_in!==null) body.T_ref_in_C=refIn.T_ref_in;
       if(hxType==="FT") body.ft_spec=ftSpec; else body.mchx_spec=mchxSpec;
+      body.max_outer=solverCfg.max_outer;
+      body.outer_tol_pct=solverCfg.tol_pct;
       const res=await fetch(`${API_URL}/simulate`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       if(!res.ok){const e=await res.json();throw new Error(e.detail||"Failed");}
       setResult(await res.json());setTab("overview");
     }catch(e){setError(e.message);}finally{setLoading(false);}
-  },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr,fCorr]);
+  },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr,fCorr,refCorr,solverCfg]);
 
   const segData=result?.segments?.filter(s=>s.tube===0)?.map(s=>({
     name:`R${s.row}S${s.seg}`,Q:s.Q,T_wall:s.T_wall,h_i:s.h_i,x:s.x_ref,eta_o:s.eta_o
@@ -245,6 +248,10 @@ function App() {
             </div>
             <div style={{marginTop:8}}>
               <Field label="Flow" options={["counter","parallel"]} value={flow} onChange={setFlow}/>
+            </div>
+            <div style={{display:"flex",gap:6,marginTop:6}}>
+              <Field label="Max Iter" value={solverCfg.max_outer} onChange={v=>setSolverCfg(p=>({...p,max_outer:parseInt(v)||10}))} step={5} min={5} max={100}/>
+              <Field label="Tol" unit="%" value={solverCfg.tol_pct} onChange={v=>setSolverCfg(p=>({...p,tol_pct:parseFloat(v)||0.1}))} step={0.05} min={0.01} max={5}/>
             </div>
           </InputGroup>
 

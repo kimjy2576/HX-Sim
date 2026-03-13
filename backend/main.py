@@ -118,6 +118,10 @@ class SimRequest(BaseModel):
     # Flow
     flow_arrangement: Literal["counter", "parallel"] = "counter"
 
+    # Solver settings
+    max_outer: int = Field(30, description="Max outer iterations (air-ref coupling)")
+    outer_tol_pct: float = Field(0.1, description="Outer convergence tolerance [%]")
+
     # Correlation selection (None = auto-recommend)
     air_j_corr: Optional[str] = Field(None, description="Air-side j-factor correlation ID. None = auto.")
     air_f_corr: Optional[str] = Field(None, description="Air-side f-factor correlation ID. None = auto.")
@@ -324,6 +328,8 @@ def simulate(req: SimRequest):
             x_in=x_in,
             T_ref_in=T_ref_in_K,
             flow_arrangement=req.flow_arrangement,
+            max_outer=req.max_outer,
+            outer_tol_pct=req.outer_tol_pct,
             ft_spec=ft,
             mchx_spec=mchx,
         )

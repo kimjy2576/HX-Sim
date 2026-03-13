@@ -51,11 +51,16 @@ class SimulationInput:
     # Flow arrangement
     flow_arrangement: Literal["counter", "parallel"] = "counter"
 
-    # Solver
+    # Solver — inner (T_wall per segment)
     alpha: float = 0.7         # under-relaxation
     max_iter: int = 12         # T_wall iteration limit
     tol_T: float = 0.05        # [K]
     tol_Q: float = 0.5         # [W]
+
+    # Solver — outer (air-refrigerant coupling)
+    max_outer: int = 30        # outer iteration limit
+    outer_tol_pct: float = 0.1 # [%] relative Q convergence
+    outer_tol_T: float = 0.1   # [K] T_air_out convergence
 
 
 @dataclass
@@ -205,9 +210,9 @@ class HXSolver:
         m_air_cell = m_air / max(self.Nt * Ns, 1)
 
         seg_dict = {}
-        max_outer = 30
-        outer_tol_pct = 0.1   # [%] relative Q convergence
-        outer_tol_T = 0.1     # [K] T_air_out convergence
+        max_outer = inp.max_outer
+        outer_tol_pct = inp.outer_tol_pct
+        outer_tol_T = inp.outer_tol_T
         Q_prev_outer = 0.0
         T_air_out_prev = 0.0
         outer_converged = False
