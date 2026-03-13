@@ -195,9 +195,12 @@ class HXSolver:
         # ── Outer iteration for air temperature convergence ──
         # Air state per column per row: T_air_2d[col][row]
         # Each column has INDEPENDENT air stream flowing through rows 0→Nr-1
-        T_air_2d = [[inp.T_air_in] * (self.Nr + 1) for _ in range(self.Nt)]
-        W_air_2d = [[W_in] * (self.Nr + 1) for _ in range(self.Nt)]
-        m_air_col = m_air / self.Nt if self.Nt > 0 else m_air
+        Ns = self.N_seg
+        T_air_3d = [[[inp.T_air_in] * (self.Nr + 1) for _ in range(Ns)]
+                     for _ in range(self.Nt)]
+        W_air_3d = [[[W_in] * (self.Nr + 1) for _ in range(Ns)]
+                     for _ in range(self.Nt)]
+        m_air_cell = m_air / max(self.Nt * Ns, 1)
 
         seg_dict = {}  # (col, row, seg) → SegmentResult
 
@@ -213,10 +216,10 @@ class HXSolver:
                     T_ref = inp.T_ref_in
 
                 for pass_idx, (row_idx, col_idx) in enumerate(path):
-                    T_air_local = T_air_2d[col_idx][row_idx]
-                    W_air_local = W_air_2d[col_idx][row_idx]
+                    for seg_idx in range(Ns):
+                        T_air_local = T_air_3d[col_idx][seg_idx][row_idx]
+                        W_air_local = W_air_3d[col_idx][seg_idx][row_idx]
 
-                    for seg_idx in range(self.N_seg):
                         seg_result = self._solve_segment(
                             row=row_idx, tube=col_idx, seg=seg_idx,
                             T_air=T_air_local, W_air=W_air_local, T_dp=T_dp,
@@ -253,34 +256,35 @@ class HXSolver:
             # ── Update per-column air temperature profiles ──
             h_fg_water = 2501000.0
             for col_idx in range(self.Nt):
-                T_air_2d[col_idx][0] = inp.T_air_in
-                W_air_2d[col_idx][0] = W_in
-                for row_idx in range(self.Nr):
-                    Q_cell = sum(seg_dict.get((col_idx, row_idx, s), SegmentResult()).Q
-                                 for s in range(self.N_seg))
-                    Q_lat_cell = sum(seg_dict.get((col_idx, row_idx, s), SegmentResult()).Q_latent
-                                     for s in range(self.N_seg))
-                    if m_air_col > 0:
-                        h_cur = self.air.h_simple(T_air_2d[col_idx][row_idx],
-                                                   W_air_2d[col_idx][row_idx])
-                        if inp.mode == "evap":
-                            h_next = h_cur - Q_cell / m_air_col
+                for seg_idx in range(Ns):
+                    T_air_3d[col_idx][seg_idx][0] = inp.T_air_in
+                    W_air_3d[col_idx][seg_idx][0] = W_in
+                    for row_idx in range(self.Nr):
+                        sr = seg_dict.get((col_idx, row_idx, seg_idx))
+                        Q_seg = sr.Q if sr else 0.0
+                        Q_lat = sr.Q_latent if sr else 0.0
+                        if m_air_cell > 0:
+                            h_cur = self.air.h_simple(
+                                T_air_3d[col_idx][seg_idx][row_idx],
+                                W_air_3d[col_idx][seg_idx][row_idx])
+                            if inp.mode == "evap":
+                                h_next = h_cur - Q_seg / m_air_cell
+                            else:
+                                h_next = h_cur + Q_seg / m_air_cell
+                            W_rem = Q_lat / (m_air_cell * h_fg_water)
+                            W_next = max(W_air_3d[col_idx][seg_idx][row_idx] - W_rem, 0)
+                            T_next = self.air.T_from_h_simple(h_next, W_next)
+                            T_air_3d[col_idx][seg_idx][row_idx + 1] = T_next
+                            W_air_3d[col_idx][seg_idx][row_idx + 1] = W_next
                         else:
-                            h_next = h_cur + Q_cell / m_air_col
-                        W_rem = Q_lat_cell / (m_air_col * h_fg_water)
-                        W_next = max(W_air_2d[col_idx][row_idx] - W_rem, 0)
-                        T_next = self.air.T_from_h_simple(h_next, W_next)
-                        T_air_2d[col_idx][row_idx + 1] = T_next
-                        W_air_2d[col_idx][row_idx + 1] = W_next
-                    else:
-                        T_air_2d[col_idx][row_idx + 1] = T_air_2d[col_idx][row_idx]
-                        W_air_2d[col_idx][row_idx + 1] = W_air_2d[col_idx][row_idx]
+                            T_air_3d[col_idx][seg_idx][row_idx + 1] = T_air_3d[col_idx][seg_idx][row_idx]
+                            W_air_3d[col_idx][seg_idx][row_idx + 1] = W_air_3d[col_idx][seg_idx][row_idx]
 
         # ── Compile results ──
         all_segments = []
         for col_idx in range(self.Nt):
             for row_idx in range(self.Nr):
-                for seg_idx in range(self.N_seg):
+                for seg_idx in range(Ns):
                     key = (col_idx, row_idx, seg_idx)
                     if key in seg_dict:
                         all_segments.append(seg_dict[key])
@@ -292,11 +296,13 @@ class HXSolver:
         x_ref_out_avg = sum(o[0] for o in circ_outlets) / n_circ if circ_outlets else inp.x_in
         T_ref_out_avg = sum(o[1] for o in circ_outlets) / n_circ if circ_outlets else inp.T_sat
 
-        T_air_out = sum(T_air_2d[c][self.Nr] for c in range(self.Nt)) / max(self.Nt, 1)
-        W_air_out = sum(W_air_2d[c][self.Nr] for c in range(self.Nt)) / max(self.Nt, 1)
+        T_air_out = sum(T_air_3d[c][s][self.Nr]
+                        for c in range(self.Nt) for s in range(Ns)) / max(self.Nt * Ns, 1)
+        W_air_out = sum(W_air_3d[c][s][self.Nr]
+                        for c in range(self.Nt) for s in range(Ns)) / max(self.Nt * Ns, 1)
 
         row_Q = [sum(seg_dict.get((t, r, s), SegmentResult()).Q
-                     for t in range(self.Nt) for s in range(self.N_seg))
+                     for t in range(self.Nt) for s in range(Ns))
                  for r in range(self.Nr)]
 
         result = SimulationResult()
