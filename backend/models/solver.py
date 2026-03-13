@@ -193,28 +193,28 @@ class HXSolver:
         h_fg = ref.h_fg(P_sat)
 
         # ── Outer iteration for air temperature convergence ──
-        T_air_profile = [inp.T_air_in] * (self.Nr + 1)
-        W_air_profile = [W_in] * (self.Nr + 1)
+        # Air state per column per row: T_air_2d[col][row]
+        # Each column has INDEPENDENT air stream flowing through rows 0→Nr-1
+        T_air_2d = [[inp.T_air_in] * (self.Nr + 1) for _ in range(self.Nt)]
+        W_air_2d = [[W_in] * (self.Nr + 1) for _ in range(self.Nt)]
+        m_air_col = m_air / self.Nt if self.Nt > 0 else m_air
+
         seg_dict = {}  # (col, row, seg) → SegmentResult
 
         for outer_iter in range(5):
-            Q_per_row = [0.0] * self.Nr
-            Q_lat_per_row = [0.0] * self.Nr
             seg_dict.clear()
-            circ_outlets = []  # (x_out, T_out) per circuit
+            circ_outlets = []
 
             # ── Process each circuit ──
             for circ_idx, path in enumerate(circuits):
-                # Circuit inlet state
                 x_ref = inp.x_in
                 T_ref = inp.T_sat
                 if inp.T_ref_in is not None and (inp.x_in >= 1.0 or inp.x_in <= 0.0):
                     T_ref = inp.T_ref_in
 
-                # Follow the tube-pass sequence
                 for pass_idx, (row_idx, col_idx) in enumerate(path):
-                    T_air_local = T_air_profile[row_idx]
-                    W_air_local = W_air_profile[row_idx]
+                    T_air_local = T_air_2d[col_idx][row_idx]
+                    W_air_local = W_air_2d[col_idx][row_idx]
 
                     for seg_idx in range(self.N_seg):
                         seg_result = self._solve_segment(
@@ -225,8 +225,6 @@ class HXSolver:
                             h_o=h_o, m_ref_tube=m_ref_circ,
                         )
                         seg_dict[(col_idx, row_idx, seg_idx)] = seg_result
-                        Q_per_row[row_idx] += seg_result.Q
-                        Q_lat_per_row[row_idx] += seg_result.Q_latent
 
                         # Update refrigerant state
                         if 0 <= x_ref <= 1:
@@ -252,28 +250,31 @@ class HXSolver:
 
                 circ_outlets.append((x_ref, T_ref))
 
-            # ── Update air temperature profile ──
-            T_air_profile[0] = inp.T_air_in
-            W_air_profile[0] = W_in
+            # ── Update per-column air temperature profiles ──
             h_fg_water = 2501000.0
-
-            for row_idx in range(self.Nr):
-                Q_row = Q_per_row[row_idx]
-                Q_lat = Q_lat_per_row[row_idx]
-                if m_air > 0:
-                    h_air_cur = self.air.h_simple(T_air_profile[row_idx], W_air_profile[row_idx])
-                    if inp.mode == "evap":
-                        h_air_next = h_air_cur - Q_row / m_air
+            for col_idx in range(self.Nt):
+                T_air_2d[col_idx][0] = inp.T_air_in
+                W_air_2d[col_idx][0] = W_in
+                for row_idx in range(self.Nr):
+                    Q_cell = sum(seg_dict.get((col_idx, row_idx, s), SegmentResult()).Q
+                                 for s in range(self.N_seg))
+                    Q_lat_cell = sum(seg_dict.get((col_idx, row_idx, s), SegmentResult()).Q_latent
+                                     for s in range(self.N_seg))
+                    if m_air_col > 0:
+                        h_cur = self.air.h_simple(T_air_2d[col_idx][row_idx],
+                                                   W_air_2d[col_idx][row_idx])
+                        if inp.mode == "evap":
+                            h_next = h_cur - Q_cell / m_air_col
+                        else:
+                            h_next = h_cur + Q_cell / m_air_col
+                        W_rem = Q_lat_cell / (m_air_col * h_fg_water)
+                        W_next = max(W_air_2d[col_idx][row_idx] - W_rem, 0)
+                        T_next = self.air.T_from_h_simple(h_next, W_next)
+                        T_air_2d[col_idx][row_idx + 1] = T_next
+                        W_air_2d[col_idx][row_idx + 1] = W_next
                     else:
-                        h_air_next = h_air_cur + Q_row / m_air
-                    W_removed = Q_lat / (m_air * h_fg_water) if m_air > 0 else 0
-                    W_next = max(W_air_profile[row_idx] - W_removed, 0)
-                    T_next = self.air.T_from_h_simple(h_air_next, W_next)
-                    T_air_profile[row_idx + 1] = T_next
-                    W_air_profile[row_idx + 1] = W_next
-                else:
-                    T_air_profile[row_idx + 1] = T_air_profile[row_idx]
-                    W_air_profile[row_idx + 1] = W_air_profile[row_idx]
+                        T_air_2d[col_idx][row_idx + 1] = T_air_2d[col_idx][row_idx]
+                        W_air_2d[col_idx][row_idx + 1] = W_air_2d[col_idx][row_idx]
 
         # ── Compile results ──
         all_segments = []
@@ -288,12 +289,11 @@ class HXSolver:
         Q_lat_total = sum(s.Q_latent for s in all_segments)
         Q_sen = Q_total - Q_lat_total
 
-        # Circuit outlet average
         x_ref_out_avg = sum(o[0] for o in circ_outlets) / n_circ if circ_outlets else inp.x_in
         T_ref_out_avg = sum(o[1] for o in circ_outlets) / n_circ if circ_outlets else inp.T_sat
 
-        T_air_out = T_air_profile[self.Nr]
-        W_air_out = W_air_profile[self.Nr]
+        T_air_out = sum(T_air_2d[c][self.Nr] for c in range(self.Nt)) / max(self.Nt, 1)
+        W_air_out = sum(W_air_2d[c][self.Nr] for c in range(self.Nt)) / max(self.Nt, 1)
 
         row_Q = [sum(seg_dict.get((t, r, s), SegmentResult()).Q
                      for t in range(self.Nt) for s in range(self.N_seg))
