@@ -159,6 +159,8 @@ function App() {
   const [error,setError]=useState("");
   const [tab,setTab]=useState("overview");
   const [contourVar,setContourVar]=useState("T_wall");
+  const [contourView,setContourView]=useState("full"); // full | byRow | byCol
+  const [contourIdx,setContourIdx]=useState(0); // selected row or tube index
   const [serverOk,setServerOk]=useState(null);
 
   useEffect(()=>{
@@ -760,32 +762,76 @@ function App() {
                 const segs = result.segments || [];
                 if(segs.length===0) return <div style={{color:C.dim,fontSize:12}}>No segment data</div>;
 
-                // Build grid: rows × segs (use tube 0)
-                const tube0 = segs.filter(s=>s.tube===0);
-                const rows = [...new Set(tube0.map(s=>s.row))].sort((a,b)=>a-b);
-                const segIds = [...new Set(tube0.map(s=>s.seg))].sort((a,b)=>a-b);
-                const Nr = rows.length, Ns = segIds.length;
+                // Collect unique indices
+                const allRows = [...new Set(segs.map(s=>s.row))].sort((a,b)=>a-b);
+                const allTubes = [...new Set(segs.map(s=>s.tube))].sort((a,b)=>a-b);
+                const allSegs = [...new Set(segs.map(s=>s.seg))].sort((a,b)=>a-b);
 
                 // Variable options
                 const vars = {
-                  T_wall:{label:"T_wall [°C]",key:"T_wall",unit:"°C",fmt:v=>v.toFixed(1)},
-                  T_air:{label:"T_air [°C]",key:"T_air_local",unit:"°C",fmt:v=>v.toFixed(1)},
-                  T_ref:{label:"T_ref [°C]",key:"T_ref",unit:"°C",fmt:v=>v.toFixed(1)},
-                  Q:{label:"Q [W]",key:"Q",unit:"W",fmt:v=>v.toFixed(1)},
-                  x_ref:{label:"x_ref [-]",key:"x_ref",unit:"",fmt:v=>v.toFixed(3)},
-                  h_i:{label:"h_i [W/m²K]",key:"h_i",unit:"",fmt:v=>v.toFixed(0)},
-                  h_o:{label:"h_o [W/m²K]",key:"h_o",unit:"",fmt:v=>v.toFixed(0)},
-                  eta_o:{label:"η_o [-]",key:"eta_o",unit:"",fmt:v=>v.toFixed(3)},
+                  T_wall:{label:"T_wall [°C]",key:"T_wall",fmt:v=>v.toFixed(1)},
+                  T_air:{label:"T_air [°C]",key:"T_air_local",fmt:v=>v.toFixed(1)},
+                  T_ref:{label:"T_ref [°C]",key:"T_ref",fmt:v=>v.toFixed(1)},
+                  Q:{label:"Q [W]",key:"Q",fmt:v=>v.toFixed(1)},
+                  x_ref:{label:"x_ref [-]",key:"x_ref",fmt:v=>v.toFixed(3)},
+                  h_i:{label:"h_i [W/m²K]",key:"h_i",fmt:v=>v.toFixed(0)},
+                  h_o:{label:"h_o [W/m²K]",key:"h_o",fmt:v=>v.toFixed(0)},
+                  eta_o:{label:"η_o [-]",key:"eta_o",fmt:v=>v.toFixed(3)},
                 };
                 const cv = vars[contourVar] || vars.T_wall;
 
-                // Build 2D grid values
+                // Build grid based on view mode
+                let gridRows, gridCols, rowLabels, colLabels, axisY, axisX, subtitle, filtered;
+                const safeIdx = Math.max(0, contourIdx);
+
+                if(contourView==="byRow"){
+                  const ri = Math.min(safeIdx, allRows.length-1);
+                  const selectedRow = allRows[ri];
+                  filtered = segs.filter(s=>s.row===selectedRow);
+                  gridRows = allTubes;
+                  gridCols = allSegs;
+                  rowLabels = allTubes.map(t=>`T${t}`);
+                  colLabels = allSegs.map(s=>`S${s}`);
+                  axisY = "Tube (Column)";
+                  axisX = "← Segment along tube →";
+                  subtitle = `Row ${selectedRow} · ${gridRows.length} tubes × ${gridCols.length} segs`;
+                } else if(contourView==="byCol"){
+                  const ti = Math.min(safeIdx, allTubes.length-1);
+                  const selectedTube = allTubes[ti];
+                  filtered = segs.filter(s=>s.tube===selectedTube);
+                  gridRows = allRows;
+                  gridCols = allSegs;
+                  rowLabels = allRows.map(r=>`R${r}`);
+                  colLabels = allSegs.map(s=>`S${s}`);
+                  axisY = "Row (airflow →)";
+                  axisX = "← Segment along tube →";
+                  subtitle = `Tube ${selectedTube} · ${gridRows.length} rows × ${gridCols.length} segs`;
+                } else {
+                  // full: rows × segs, tube 0
+                  filtered = segs.filter(s=>s.tube===allTubes[0]);
+                  gridRows = allRows;
+                  gridCols = allSegs;
+                  rowLabels = allRows.map(r=>`R${r}`);
+                  colLabels = allSegs.map(s=>`S${s}`);
+                  axisY = "Row (airflow →)";
+                  axisX = "← Segment along tube →";
+                  subtitle = `Tube 0 · ${gridRows.length} rows × ${gridCols.length} segs`;
+                }
+
+                const Nrow = gridRows.length, Ncol = gridCols.length;
+
+                // Build 2D value array
                 const grid = [];
                 let vMin=Infinity, vMax=-Infinity;
-                for(let ri=0;ri<Nr;ri++){
+                for(let ri=0;ri<Nrow;ri++){
                   const rowArr=[];
-                  for(let si=0;si<Ns;si++){
-                    const seg = tube0.find(s=>s.row===rows[ri]&&s.seg===segIds[si]);
+                  for(let ci=0;ci<Ncol;ci++){
+                    let seg;
+                    if(contourView==="byRow"){
+                      seg = filtered.find(s=>s.tube===gridRows[ri]&&s.seg===gridCols[ci]);
+                    } else {
+                      seg = filtered.find(s=>s.row===gridRows[ri]&&s.seg===gridCols[ci]);
+                    }
                     const val = seg ? seg[cv.key] : 0;
                     rowArr.push(val);
                     if(val<vMin) vMin=val;
@@ -795,42 +841,49 @@ function App() {
                 }
                 const vRange = vMax-vMin || 1;
 
-                // Color interpolation (blue → cyan → green → yellow → red)
+                // Color interpolation
                 function valToColor(v){
                   const t = Math.max(0,Math.min(1,(v-vMin)/vRange));
-                  // 5-stop gradient
                   const stops = [
-                    [0.0, [30,70,200]],   // blue
-                    [0.25,[30,180,220]],   // cyan
-                    [0.5, [50,200,80]],    // green
-                    [0.75,[240,200,40]],   // yellow
-                    [1.0, [220,50,40]],    // red
+                    [0.0, [30,70,200]],[0.25,[30,180,220]],[0.5, [50,200,80]],
+                    [0.75,[240,200,40]],[1.0, [220,50,40]],
                   ];
                   let i=0;
                   for(;i<stops.length-1;i++) if(t<=stops[i+1][0]) break;
                   const [t0,c0]=stops[i], [t1,c1]=stops[Math.min(i+1,stops.length-1)];
                   const f = t1>t0 ? (t-t0)/(t1-t0) : 0;
-                  const r=Math.round(c0[0]+(c1[0]-c0[0])*f);
-                  const g=Math.round(c0[1]+(c1[1]-c0[1])*f);
-                  const b=Math.round(c0[2]+(c1[2]-c0[2])*f);
-                  return `rgb(${r},${g},${b})`;
+                  return `rgb(${Math.round(c0[0]+(c1[0]-c0[0])*f)},${Math.round(c0[1]+(c1[1]-c0[1])*f)},${Math.round(c0[2]+(c1[2]-c0[2])*f)})`;
                 }
 
-                // SVG dimensions
+                // SVG layout
                 const pad={top:45,bottom:50,left:55,right:20};
-                const cellW=Math.min(50,Math.max(28,(480-pad.left-pad.right)/Ns));
-                const cellH=Math.min(50,Math.max(28,(300-pad.top-pad.bottom)/Nr));
-                const svgW=pad.left+Ns*cellW+pad.right+80;
-                const svgH=pad.top+Nr*cellH+pad.bottom;
-
-                // Color bar
-                const cbX=pad.left+Ns*cellW+20, cbW=14, cbH=Nr*cellH;
+                const cellW=Math.min(56,Math.max(30,(520-pad.left-pad.right)/Math.max(Ncol,1)));
+                const cellH=Math.min(50,Math.max(28,(340-pad.top-pad.bottom)/Math.max(Nrow,1)));
+                const svgW=pad.left+Ncol*cellW+pad.right+80;
+                const svgH=pad.top+Nrow*cellH+pad.bottom;
+                const cbX=pad.left+Ncol*cellW+20, cbW=14, cbH=Math.max(Nrow*cellH,60);
                 const cbStops=20;
+
+                // Slider range
+                const sliderMax = contourView==="byRow"?allRows.length-1:contourView==="byCol"?allTubes.length-1:0;
+                const sliderLabel = contourView==="byRow"?`Row ${allRows[Math.min(safeIdx,allRows.length-1)]}`:
+                                    contourView==="byCol"?`Tube ${allTubes[Math.min(safeIdx,allTubes.length-1)]}`:"";
 
                 return (
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}>
-                    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-                      <div style={{fontSize:11,color:C.accent,fontWeight:700,letterSpacing:1}}>HX CONTOUR MAP</div>
+                    {/* Header: view mode + variable + info */}
+                    <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:8,marginBottom:10}}>
+                      <div style={{fontSize:11,color:C.accent,fontWeight:700,letterSpacing:1}}>HX CONTOUR</div>
+                      {/* View mode buttons */}
+                      {[{k:"full",l:"전체"},{k:"byRow",l:"Row별"},{k:"byCol",l:"Column별"}].map(v=>(
+                        <button key={v.k} onClick={()=>{setContourView(v.k);setContourIdx(0);}}
+                          style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",
+                            fontSize:10,fontWeight:700,fontFamily:"inherit",
+                            background:contourView===v.k?mc:C.bg,
+                            color:contourView===v.k?C.bg:C.dim}}>
+                          {v.l}
+                        </button>
+                      ))}
                       <select value={contourVar} onChange={e=>setContourVar(e.target.value)}
                         style={{background:C.bg,color:C.text,border:`1px solid ${C.border}`,
                           borderRadius:6,padding:"4px 8px",fontSize:11,fontFamily:"inherit"}}>
@@ -838,37 +891,70 @@ function App() {
                           <option key={k} value={k}>{v.label}</option>
                         )}
                       </select>
-                      <span style={{fontSize:10,color:C.dim}}>Tube 0 · {Nr} rows × {Ns} segs</span>
                     </div>
+
+                    {/* Slider for byRow/byCol */}
+                    {contourView!=="full"&&(
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,
+                        padding:"8px 12px",background:C.bg,borderRadius:8}}>
+                        <span style={{fontSize:11,fontWeight:700,color:mc,minWidth:60}}>{sliderLabel}</span>
+                        <input type="range" min={0} max={sliderMax} value={Math.min(safeIdx,sliderMax)}
+                          onChange={e=>setContourIdx(parseInt(e.target.value))}
+                          style={{flex:1,accentColor:mc}}/>
+                        {/* Quick-step buttons */}
+                        <button onClick={()=>setContourIdx(i=>Math.max(0,i-1))}
+                          style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${C.border}`,
+                            background:C.card,color:C.text,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>◀</button>
+                        <button onClick={()=>setContourIdx(i=>Math.min(sliderMax,i+1))}
+                          style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${C.border}`,
+                            background:C.card,color:C.text,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>▶</button>
+                      </div>
+                    )}
+
+                    <div style={{fontSize:10,color:C.dim,marginBottom:6}}>{subtitle}</div>
+
                     <div style={{overflowX:"auto"}}>
                       <svg width={svgW} height={svgH} style={{display:"block"}}>
                         {/* Title */}
-                        <text x={pad.left+Ns*cellW/2} y={16} textAnchor="middle"
+                        <text x={pad.left+Ncol*cellW/2} y={16} textAnchor="middle"
                           style={{fontSize:12,fill:C.text,fontWeight:700}}>{cv.label}</text>
 
-                        {/* Air flow arrow */}
+                        {/* Air flow arrow (only for views with row axis) */}
+                        {(contourView!=="byRow")&&(<>
+                          <defs>
+                            <marker id="arrowC" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                              <polygon points="0 0, 8 3, 0 6" fill={C.accent}/>
+                            </marker>
+                          </defs>
+                          <line x1={14} y1={pad.top+Nrow*cellH/2-20} x2={14} y2={pad.top+Nrow*cellH/2+20}
+                            stroke={C.accent} strokeWidth={2} markerEnd="url(#arrowC)"/>
+                          <text x={14} y={pad.top+Nrow*cellH/2-26} textAnchor="middle"
+                            style={{fontSize:9,fill:C.accent,fontWeight:700}}>AIR</text>
+                        </>)}
+
+                        {/* Ref flow arrow (horizontal, for all views) */}
                         <defs>
-                          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                            <polygon points="0 0, 8 3, 0 6" fill={C.accent}/>
+                          <marker id="arrowR" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                            <polygon points="0 0, 8 3, 0 6" fill={C.accent3}/>
                           </marker>
                         </defs>
-                        <line x1={12} y1={pad.top+Nr*cellH/2-20} x2={12} y2={pad.top+Nr*cellH/2+20}
-                          stroke={C.accent} strokeWidth={2} markerEnd="url(#arrowhead)"/>
-                        <text x={12} y={pad.top+Nr*cellH/2-25} textAnchor="middle"
-                          style={{fontSize:9,fill:C.accent,fontWeight:700}}>AIR</text>
+                        <line x1={pad.left} y1={pad.top-8} x2={pad.left+Ncol*cellW-10} y2={pad.top-8}
+                          stroke={C.accent3} strokeWidth={1.5} markerEnd="url(#arrowR)" strokeDasharray="4,3"/>
+                        <text x={pad.left+Ncol*cellW} y={pad.top-5} textAnchor="end"
+                          style={{fontSize:8,fill:C.accent3,fontWeight:600}}>REF</text>
 
                         {/* Heatmap cells */}
                         {grid.map((row,ri)=>
-                          row.map((val,si)=>{
-                            const x=pad.left+si*cellW, y=pad.top+ri*cellH;
+                          row.map((val,ci)=>{
+                            const x=pad.left+ci*cellW, y=pad.top+ri*cellH;
                             const col=valToColor(val);
                             return (
-                              <g key={`${ri}-${si}`}>
+                              <g key={`${ri}-${ci}`}>
                                 <rect x={x} y={y} width={cellW} height={cellH}
                                   fill={col} stroke={C.bg} strokeWidth={1} rx={2}/>
                                 <text x={x+cellW/2} y={y+cellH/2+4} textAnchor="middle"
-                                  style={{fontSize:cellW>35?9:7,fill:"#fff",fontWeight:600,
-                                    textShadow:"0 0 3px rgba(0,0,0,0.7)"}}>
+                                  style={{fontSize:cellW>38?9:7,fill:"#fff",fontWeight:600,
+                                    textShadow:"0 0 3px rgba(0,0,0,0.8)"}}>
                                   {cv.fmt(val)}
                                 </text>
                               </g>
@@ -876,44 +962,22 @@ function App() {
                           })
                         )}
 
-                        {/* Tube circles overlay (staggered) */}
-                        {rows.map((r,ri)=>{
-                          const cy=pad.top+ri*cellH+cellH/2;
-                          const tubeR=Math.min(cellH*0.3,8);
-                          // Place tubes at segment boundaries (between segments)
-                          return segIds.slice(0,-1).map((s,si)=>{
-                            const cx=pad.left+(si+1)*cellW;
-                            // Stagger odd rows
-                            const offset = ri%2===1 ? cellW*0.5 : 0;
-                            return (
-                              <circle key={`t${ri}-${si}`} cx={cx+offset*0} cy={cy}
-                                r={tubeR} fill="none" stroke={`${C.text}44`} strokeWidth={1}/>
-                            );
-                          });
-                        })}
-
                         {/* Row labels */}
-                        {rows.map((r,ri)=>(
+                        {rowLabels.map((lbl,ri)=>(
                           <text key={`rl${ri}`} x={pad.left-6} y={pad.top+ri*cellH+cellH/2+4}
-                            textAnchor="end" style={{fontSize:10,fill:C.dim}}>R{r}</text>
+                            textAnchor="end" style={{fontSize:10,fill:C.dim}}>{lbl}</text>
                         ))}
-
-                        {/* Segment labels */}
-                        {segIds.map((s,si)=>(
-                          <text key={`sl${si}`} x={pad.left+si*cellW+cellW/2} y={pad.top+Nr*cellH+14}
-                            textAnchor="middle" style={{fontSize:10,fill:C.dim}}>S{s}</text>
+                        {/* Col labels */}
+                        {colLabels.map((lbl,ci)=>(
+                          <text key={`cl${ci}`} x={pad.left+ci*cellW+cellW/2} y={pad.top+Nrow*cellH+14}
+                            textAnchor="middle" style={{fontSize:10,fill:C.dim}}>{lbl}</text>
                         ))}
-
                         {/* Axis labels */}
-                        <text x={pad.left+Ns*cellW/2} y={pad.top+Nr*cellH+32}
-                          textAnchor="middle" style={{fontSize:10,fill:C.dim,fontWeight:600}}>
-                          ← Segment along tube →
-                        </text>
-                        <text x={28} y={pad.top+Nr*cellH/2} textAnchor="middle"
-                          transform={`rotate(-90,28,${pad.top+Nr*cellH/2})`}
-                          style={{fontSize:10,fill:C.dim,fontWeight:600}}>
-                          Row (airflow →)
-                        </text>
+                        <text x={pad.left+Ncol*cellW/2} y={pad.top+Nrow*cellH+32}
+                          textAnchor="middle" style={{fontSize:10,fill:C.dim,fontWeight:600}}>{axisX}</text>
+                        <text x={28} y={pad.top+Nrow*cellH/2} textAnchor="middle"
+                          transform={`rotate(-90,28,${pad.top+Nrow*cellH/2})`}
+                          style={{fontSize:10,fill:C.dim,fontWeight:600}}>{axisY}</text>
 
                         {/* Color bar */}
                         {Array.from({length:cbStops}).map((_,i)=>{
@@ -927,25 +991,19 @@ function App() {
                         })}
                         <rect x={cbX} y={pad.top} width={cbW} height={cbH}
                           fill="none" stroke={C.border} strokeWidth={1} rx={2}/>
-                        <text x={cbX+cbW+4} y={pad.top+6} style={{fontSize:8,fill:C.text}}>
-                          {cv.fmt(vMax)}
-                        </text>
-                        <text x={cbX+cbW+4} y={pad.top+cbH} style={{fontSize:8,fill:C.text}}>
-                          {cv.fmt(vMin)}
-                        </text>
-                        <text x={cbX+cbW+4} y={pad.top+cbH/2+3} style={{fontSize:8,fill:C.dim}}>
-                          {cv.fmt((vMin+vMax)/2)}
-                        </text>
+                        <text x={cbX+cbW+4} y={pad.top+8} style={{fontSize:8,fill:C.text}}>{cv.fmt(vMax)}</text>
+                        <text x={cbX+cbW+4} y={pad.top+cbH} style={{fontSize:8,fill:C.text}}>{cv.fmt(vMin)}</text>
+                        <text x={cbX+cbW+4} y={pad.top+cbH/2+3} style={{fontSize:8,fill:C.dim}}>{cv.fmt((vMin+vMax)/2)}</text>
                       </svg>
                     </div>
 
                     {/* Summary stats */}
-                    <div style={{display:"flex",gap:16,marginTop:10,padding:"8px 10px",
+                    <div style={{display:"flex",flexWrap:"wrap",gap:12,marginTop:10,padding:"8px 10px",
                       background:C.bg,borderRadius:6,fontSize:11}}>
                       <span><span style={{color:C.dim}}>Min:</span> <span style={{color:valToColor(vMin),fontWeight:700}}>{cv.fmt(vMin)}</span></span>
                       <span><span style={{color:C.dim}}>Max:</span> <span style={{color:valToColor(vMax),fontWeight:700}}>{cv.fmt(vMax)}</span></span>
-                      <span><span style={{color:C.dim}}>Range:</span> {cv.fmt(vRange)}</span>
-                      <span><span style={{color:C.dim}}>Mean:</span> {cv.fmt(tube0.reduce((s,v)=>s+v[cv.key],0)/tube0.length)}</span>
+                      <span><span style={{color:C.dim}}>Δ:</span> {cv.fmt(vRange)}</span>
+                      <span><span style={{color:C.dim}}>Mean:</span> {cv.fmt(filtered.reduce((s,v)=>s+v[cv.key],0)/filtered.length)}</span>
                     </div>
                   </div>
                 );
