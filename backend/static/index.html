@@ -169,6 +169,43 @@ function App() {
     fetch(API_URL+"/api").then(r=>r.json()).then(()=>setServerOk(true)).catch(()=>setServerOk(false));
   },[]);
 
+  // ── Save / Load defaults via localStorage ──
+  const STORAGE_KEY = "hxsim_defaults";
+  const [saveFlash,setSaveFlash]=useState(false);
+  const collectState = ()=>({hxType,mode,airIn,refIn,flow,solverCfg,ftSpec,mchxSpec,airCorr,fCorr,refCorr});
+  const saveDefaults = ()=>{
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(collectState())); }catch(e){}
+    setSaveFlash(true); setTimeout(()=>setSaveFlash(false),1500);
+  };
+  const resetDefaults = ()=>{
+    try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+    setHxType("FT"); setMode("cond");
+    setAirIn({T:35,RH:0.98,flowMode:"CMM",V:2.0,CMM:2.6});
+    setRefIn({fluid:"R290",stateMode:"P",T_sat:null,P_sat:2811,m_ref:16.5,massUnit:"kg/hr",twoPhase:false,x_in:0.2,T_ref_in:92.6});
+    setFlow("counter"); setSolverCfg({max_outer:30,tol_pct:0.1});
+    setFtSpec({...DEFAULT_FT}); setMchxSpec({...DEFAULT_MCHX});
+    setAirCorr({mode:"auto",selected:null}); setFCorr({mode:"auto",selected:null});
+    setRefCorr({evap:{mode:"auto",selected:null},cond:{mode:"auto",selected:null}});
+  };
+  useEffect(()=>{
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return;
+      const d = JSON.parse(raw);
+      if(d.hxType) setHxType(d.hxType);
+      if(d.mode) setMode(d.mode);
+      if(d.airIn) setAirIn(p=>({...p,...d.airIn}));
+      if(d.refIn) setRefIn(p=>({...p,...d.refIn}));
+      if(d.flow) setFlow(d.flow);
+      if(d.solverCfg) setSolverCfg(p=>({...p,...d.solverCfg}));
+      if(d.ftSpec) setFtSpec(p=>({...p,...d.ftSpec}));
+      if(d.mchxSpec) setMchxSpec(p=>({...p,...d.mchxSpec}));
+      if(d.airCorr) setAirCorr(p=>({...p,...d.airCorr}));
+      if(d.fCorr) setFCorr(p=>({...p,...d.fCorr}));
+      if(d.refCorr) setRefCorr(p=>({...p,...d.refCorr}));
+    }catch(e){}
+  },[]);
+
   const uA=(k,v)=>setAirIn(p=>({...p,[k]:v}));
   const uR=(k,v)=>setRefIn(p=>({...p,[k]:v}));
   const uF=(k,v)=>setFtSpec(p=>({...p,[k]:v}));
@@ -871,6 +908,17 @@ function App() {
             boxShadow:`0 4px 24px ${C.accent}33`}}>
             {loading?"⏳ Computing...":"▶ RUN SIMULATION"}
           </button>
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <button onClick={saveDefaults} style={{flex:1,padding:"8px 0",borderRadius:8,border:`1px solid ${saveFlash?C.success:C.border}`,
+              background:saveFlash?`${C.success}22`:C.card,color:saveFlash?C.success:C.accent,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",
+              transition:"all 0.3s"}}>
+              {saveFlash?"✅ Saved!":"💾 Save Default"}
+            </button>
+            <button onClick={resetDefaults} style={{flex:1,padding:"8px 0",borderRadius:8,border:`1px solid ${C.border}`,
+              background:C.card,color:C.dim,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+              ↩ Reset Default
+            </button>
+          </div>
           {error&&<div style={{marginTop:12,padding:12,borderRadius:8,background:"#7f1d1d33",
             border:`1px solid ${C.err}`,fontSize:11,color:"#fca5a5",wordBreak:"break-all"}}>{error}</div>}
         </div>
