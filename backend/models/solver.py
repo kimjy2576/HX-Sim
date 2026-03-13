@@ -205,13 +205,14 @@ class HXSolver:
         m_air_cell = m_air / max(self.Nt * Ns, 1)
 
         seg_dict = {}
-        max_outer = 10
-        outer_tol_Q = 0.5  # [W] convergence tolerance for total Q
-        outer_tol_T = 0.05  # [K] convergence tolerance for T_air_out
+        max_outer = 30
+        outer_tol_pct = 0.1   # [%] relative Q convergence
+        outer_tol_T = 0.1     # [K] T_air_out convergence
         Q_prev_outer = 0.0
         T_air_out_prev = 0.0
         outer_converged = False
         outer_history = []
+        omega = 1.0  # under-relaxation: adaptive
 
         for outer_iter in range(max_outer):
             seg_dict.clear()
@@ -262,10 +263,51 @@ class HXSolver:
 
                 circ_outlets.append((x_ref, T_ref))
 
-            # ── Update per-column air temperature profiles ──
+            # ── Check outer convergence ──
+            Q_this = sum(s.Q for s in seg_dict.values())
+            T_air_out_this = sum(T_air_3d[c][s][self.Nr]
+                                 for c in range(self.Nt) for s in range(Ns)) / max(self.Nt * Ns, 1)
+            dQ_outer = abs(Q_this - Q_prev_outer)
+            dT_outer = abs(T_air_out_this - T_air_out_prev)
+            rel_dQ = dQ_outer / max(abs(Q_this), 1.0) * 100
+
+            outer_history.append({
+                "iter": outer_iter + 1,
+                "Q": round(Q_this, 2),
+                "dQ": round(dQ_outer, 2),
+                "dQ_pct": round(rel_dQ, 3),
+                "T_air_out": round(T_air_out_this - 273.15, 2),
+                "dT": round(dT_outer, 3),
+                "omega": round(omega, 3),
+            })
+
+            if outer_iter > 0 and rel_dQ < outer_tol_pct and dT_outer < outer_tol_T:
+                outer_converged = True
+                Q_prev_outer = Q_this
+                T_air_out_prev = T_air_out_this
+                break
+
+            # ── Adaptive under-relaxation ──
+            # Detect oscillation: if Q flipped sign between last 2 iterations
+            if outer_iter >= 2:
+                h1 = outer_history[-2]
+                h2 = outer_history[-3]
+                dQ_prev = h1["Q"] - h2["Q"]
+                dQ_curr = Q_this - h1["Q"]
+                if dQ_prev * dQ_curr < 0:
+                    # Oscillation detected → reduce omega
+                    omega = max(omega * 0.7, 0.3)
+                else:
+                    # Monotone → increase omega toward 1.0
+                    omega = min(omega * 1.1, 0.9)
+            elif outer_iter == 1:
+                omega = 0.6  # conservative start after first full update
+
+            Q_prev_outer = Q_this
+            T_air_out_prev = T_air_out_this
+
+            # ── Update per-(col, seg) air pencil with adaptive omega ──
             h_fg_water = 2501000.0
-            # Under-relaxation factor for air update (prevents oscillation)
-            omega = 0.5 if outer_iter > 0 else 1.0  # full update on first iter
             for col_idx in range(self.Nt):
                 for seg_idx in range(Ns):
                     T_air_3d[col_idx][seg_idx][0] = inp.T_air_in
@@ -292,30 +334,6 @@ class HXSolver:
                         else:
                             T_air_3d[col_idx][seg_idx][row_idx + 1] = T_air_3d[col_idx][seg_idx][row_idx]
                             W_air_3d[col_idx][seg_idx][row_idx + 1] = W_air_3d[col_idx][seg_idx][row_idx]
-
-            # ── Check outer convergence ──
-            Q_this = sum(s.Q for s in seg_dict.values())
-            T_air_out_this = sum(T_air_3d[c][s][self.Nr]
-                                 for c in range(self.Nt) for s in range(Ns)) / max(self.Nt * Ns, 1)
-            dQ_outer = abs(Q_this - Q_prev_outer)
-            dT_outer = abs(T_air_out_this - T_air_out_prev)
-            rel_dQ = dQ_outer / max(abs(Q_this), 1.0) * 100  # [%]
-
-            outer_history.append({
-                "iter": outer_iter + 1,
-                "Q": round(Q_this, 2),
-                "dQ": round(dQ_outer, 2),
-                "dQ_pct": round(rel_dQ, 3),
-                "T_air_out": round(T_air_out_this - 273.15, 2),
-                "dT": round(dT_outer, 3),
-            })
-
-            if outer_iter > 0 and dQ_outer < outer_tol_Q and dT_outer < outer_tol_T:
-                outer_converged = True
-                break
-
-            Q_prev_outer = Q_this
-            T_air_out_prev = T_air_out_this
 
         # ── Compile results ──
         all_segments = []
@@ -358,7 +376,7 @@ class HXSolver:
             "outer_converged": outer_converged,
             "outer_iterations": outer_iter + 1,
             "outer_max": max_outer,
-            "outer_tol_Q": outer_tol_Q,
+            "outer_tol_pct": outer_tol_pct,
             "outer_tol_T": outer_tol_T,
             "final_dQ": outer_history[-1]["dQ"] if outer_history else 0,
             "final_dQ_pct": outer_history[-1]["dQ_pct"] if outer_history else 0,
