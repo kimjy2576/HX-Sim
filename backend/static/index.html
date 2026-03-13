@@ -249,9 +249,15 @@ function App() {
             <div style={{marginTop:8}}>
               <Field label="Flow" options={["counter","parallel"]} value={flow} onChange={setFlow}/>
             </div>
-            <div style={{display:"flex",gap:6,marginTop:6}}>
-              <Field label="Max Iter" value={solverCfg.max_outer} onChange={v=>setSolverCfg(p=>({...p,max_outer:parseInt(v)||10}))} step={5} min={5} max={100}/>
-              <Field label="Tol" unit="%" value={solverCfg.tol_pct} onChange={v=>setSolverCfg(p=>({...p,tol_pct:parseFloat(v)||0.1}))} step={0.05} min={0.01} max={5}/>
+            <div style={{display:"flex",gap:6,marginTop:6,alignItems:"center"}}>
+              <span style={{fontSize:11,color:C.dim,whiteSpace:"nowrap"}}>Max Iter</span>
+              <input type="number" value={solverCfg.max_outer} step={5} min={5} max={100}
+                onChange={e=>setSolverCfg(p=>({...p,max_outer:parseInt(e.target.value)||10}))}
+                style={{background:C.bg,color:C.text,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 6px",fontSize:13,width:50,textAlign:"right"}}/>
+              <span style={{fontSize:11,color:C.dim,whiteSpace:"nowrap"}}>Tol<span style={{color:C.accent,fontSize:9}}> [%]</span></span>
+              <input type="number" value={solverCfg.tol_pct} step={0.05} min={0.01} max={5}
+                onChange={e=>setSolverCfg(p=>({...p,tol_pct:parseFloat(e.target.value)||0.1}))}
+                style={{background:C.bg,color:C.text,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 6px",fontSize:13,width:50,textAlign:"right"}}/>
             </div>
           </InputGroup>
 
