@@ -231,7 +231,14 @@ class HXSolver:
                     T_ref = inp.T_ref_in
 
                 for pass_idx, (row_idx, col_idx) in enumerate(path):
-                    for seg_idx in range(Ns):
+                    # Alternate segment direction per tube pass (U-bend)
+                    # Even pass: seg 0 → N-1, Odd pass: seg N-1 → 0
+                    if pass_idx % 2 == 0:
+                        seg_order = range(Ns)
+                    else:
+                        seg_order = range(Ns - 1, -1, -1)
+
+                    for seg_idx in seg_order:
                         T_air_local = T_air_3d[col_idx][seg_idx][row_idx]
                         W_air_local = W_air_3d[col_idx][seg_idx][row_idx]
 
