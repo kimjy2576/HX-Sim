@@ -50,6 +50,83 @@ class FinTubeSpec:
     # Number of segments per tube
     N_seg: int = 5
 
+    # Circuiting
+    circuit_mode: str = "row_parallel"  # row_parallel, serpentine_2, serpentine_4, single, custom
+    circuits: list = field(default_factory=list)  # custom: list of circuits, each = list of [row, col]
+
+
+def generate_circuits(Nr: int, Nt: int, mode: str, flow_arr: str = "counter") -> list:
+    """
+    Generate circuit definitions for FT-HX.
+    Each circuit = ordered list of [row, col] tube-passes.
+    Refrigerant flows through them sequentially.
+
+    Modes:
+      row_parallel — each column is independent circuit (Nt circuits)
+      serpentine_2 — pair 2 adjacent columns per circuit (Nt/2 circuits)
+      serpentine_4 — group 4 columns per circuit (Nt/4 circuits)
+      single       — all tubes in one circuit
+    """
+    counter = (flow_arr == "counter")
+
+    if mode == "single":
+        # One big serpentine through all columns
+        circuit = []
+        for col in range(Nt):
+            if (col % 2 == 0) == counter:
+                rows = list(range(Nr - 1, -1, -1))
+            else:
+                rows = list(range(Nr))
+            for r in rows:
+                circuit.append([r, col])
+        return [circuit]
+
+    elif mode.startswith("serpentine"):
+        # Extract group size from mode name
+        try:
+            grp = int(mode.split("_")[1])
+        except (IndexError, ValueError):
+            grp = 2
+        grp = max(1, min(grp, Nt))
+        n_circ = max(1, Nt // grp)
+        circuits = []
+        for c in range(n_circ):
+            cols_start = c * grp
+            cols = list(range(cols_start, min(cols_start + grp, Nt)))
+            circuit = []
+            for i, col in enumerate(cols):
+                if (i % 2 == 0) == counter:
+                    rows = list(range(Nr - 1, -1, -1))
+                else:
+                    rows = list(range(Nr))
+                for r in rows:
+                    circuit.append([r, col])
+            circuits.append(circuit)
+        # Handle remaining tubes
+        remaining = list(range(n_circ * grp, Nt))
+        if remaining:
+            circuit = []
+            for i, col in enumerate(remaining):
+                if (i % 2 == 0) == counter:
+                    rows = list(range(Nr - 1, -1, -1))
+                else:
+                    rows = list(range(Nr))
+                for r in rows:
+                    circuit.append([r, col])
+            circuits.append(circuit)
+        return circuits
+
+    else:
+        # row_parallel (default) — each column is one circuit
+        circuits = []
+        for col in range(Nt):
+            if counter:
+                circuit = [[r, col] for r in range(Nr - 1, -1, -1)]
+            else:
+                circuit = [[r, col] for r in range(Nr)]
+            circuits.append(circuit)
+        return circuits
+
 
 @dataclass
 class FinTubeGeo:

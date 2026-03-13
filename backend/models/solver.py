@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Literal
 from .properties import RefrigerantProperties, MoistAirProperties
-from .geometry import FinTubeSpec, FinTubeGeo, MCHXSpec, MCHXGeo
+from .geometry import FinTubeSpec, FinTubeGeo, MCHXSpec, MCHXGeo, generate_circuits
 from .correlations import (
     compute_j_factor, select_correlations, recommend_correlation,
     compute_f_factor, recommend_f_correlation, get_available_f_correlations,
@@ -38,6 +38,7 @@ class SimulationInput:
     T_sat: float = 280.15      # [K] (7°C for evaporator)
     m_ref: float = 0.02        # total mass flow rate [kg/s]
     x_in: float = 0.2          # inlet quality (evap) or 1.0 (cond)
+    T_ref_in: Optional[float] = None  # [K] actual inlet temp (for single-phase entry)
     superheat: float = 5.0     # [K] target superheat (evap)
     subcool: float = 5.0       # [K] target subcool (cond)
 
@@ -158,176 +159,170 @@ class HXSolver:
 
         # Air mass flow rate
         rho_air = self.air.rho_air(inp.T_air_in, W_in, inp.P_atm)
-        if inp.hx_type == "FT":
-            A_fr = self.geo.A_fr
-            m_air = rho_air * inp.V_air * A_fr
-        else:
-            A_fr = self.geo.A_fr
-            m_air = rho_air * inp.V_air * A_fr
+        A_fr = self.geo.A_fr
+        m_air = rho_air * inp.V_air * A_fr
 
-        # Refrigerant per tube (for state tracking: dx = Q/(m_tube × h_fg))
+        # ── Build circuit paths ──
         if inp.hx_type == "FT":
-            m_ref_tube = inp.m_ref / self.Nt
+            spec = inp.ft_spec
+            if spec.circuits and spec.circuit_mode == "custom":
+                circuits = spec.circuits
+            else:
+                circuits = generate_circuits(
+                    self.Nr, self.Nt, spec.circuit_mode, inp.flow_arrangement)
         else:
-            # MCHX: each tube has n_ports parallel channels sharing the tube flow
-            m_ref_tube = inp.m_ref / self.Nt  # per flat tube
+            # MCHX: all parallel (each tube is one circuit through all slabs)
+            circuits = generate_circuits(
+                self.Nr, self.Nt, "row_parallel", inp.flow_arrangement)
 
-        # Refrigerant mass flux (for correlation calculations)
+        n_circ = len(circuits)
+
+        # Refrigerant per circuit
+        m_ref_circ = inp.m_ref / n_circ
         if inp.hx_type == "FT":
             A_cs_ref = math.pi * self.Di ** 2 / 4
-            G_ref = m_ref_tube / A_cs_ref if A_cs_ref > 0 else 100
+            G_ref = m_ref_circ / A_cs_ref if A_cs_ref > 0 else 100
         else:
-            # MCHX: mass flux per individual port channel
             A_cs_port = inp.mchx_spec.ch_width * inp.mchx_spec.ch_height
-            m_per_port = m_ref_tube / inp.mchx_spec.n_ports
+            m_per_port = m_ref_circ / inp.mchx_spec.n_ports
             G_ref = m_per_port / A_cs_port if A_cs_port > 0 else 100
 
-        # Air mass flux
-        if inp.hx_type == "FT":
-            G_air = m_air / self.geo.A_c if self.geo.A_c > 0 else 5.0
-        else:
-            G_air = m_air / self.geo.A_c if self.geo.A_c > 0 else 5.0
-
-        # Compute air-side h_o (constant for all segments)
+        # Air mass flux & h_o
+        G_air = m_air / self.geo.A_c if self.geo.A_c > 0 else 5.0
         h_o = self._compute_h_o(G_air, inp.T_air_in)
-
-        # Initialize segment results
-        all_segments = []
-        row_Q = []
-
-        # Air state tracking per row
-        T_air_row = inp.T_air_in
-        W_air_row = W_in
-        h_air_row = h_air_in
-
-        # Per-tube refrigerant state tracking
-        # Each tube has independent refrigerant path through all Nr rows
-        x_ref_tube = [inp.x_in] * self.Nt
-        T_ref_tube = [inp.T_sat] * self.Nt
-
         h_fg = ref.h_fg(P_sat)
 
-        # Row order: air always goes 0 → Nr-1
-        # Counter: refrigerant enters at air row (Nr-1), exits at air row 0
-        # Parallel: refrigerant enters at air row 0
-        # We iterate air rows in order; for counter flow, the ref state at each
-        # air row depends on what happened in later air rows. We use a simple
-        # forward pass (row-by-row in air direction) — this is an approximation
-        # but standard for row-by-row models.
+        # ── Outer iteration for air temperature convergence ──
+        T_air_profile = [inp.T_air_in] * (self.Nr + 1)
+        W_air_profile = [W_in] * (self.Nr + 1)
+        seg_dict = {}  # (col, row, seg) → SegmentResult
 
-        # ===== ROW LOOP (air direction: Row 0 → Row Nr-1) =====
-        for air_row_idx in range(self.Nr):
-            Q_row = 0.0
-            Q_row_lat = 0.0
+        for outer_iter in range(5):
+            Q_per_row = [0.0] * self.Nr
+            Q_lat_per_row = [0.0] * self.Nr
+            seg_dict.clear()
+            circ_outlets = []  # (x_out, T_out) per circuit
 
-            # Air state for this row
-            T_air_local = T_air_row
-            W_air_local = W_air_row
+            # ── Process each circuit ──
+            for circ_idx, path in enumerate(circuits):
+                # Circuit inlet state
+                x_ref = inp.x_in
+                T_ref = inp.T_sat
+                if inp.T_ref_in is not None and (inp.x_in >= 1.0 or inp.x_in <= 0.0):
+                    T_ref = inp.T_ref_in
 
-            # ===== TUBE LOOP =====
-            for tube_idx in range(self.Nt):
-                x_ref = x_ref_tube[tube_idx]
-                T_ref = T_ref_tube[tube_idx]
+                # Follow the tube-pass sequence
+                for pass_idx, (row_idx, col_idx) in enumerate(path):
+                    T_air_local = T_air_profile[row_idx]
+                    W_air_local = W_air_profile[row_idx]
 
-                # ===== SEGMENT LOOP =====
-                for seg_idx in range(self.N_seg):
-                    seg_result = self._solve_segment(
-                        row=air_row_idx,
-                        tube=tube_idx,
-                        seg=seg_idx,
-                        T_air=T_air_local,
-                        W_air=W_air_local,
-                        T_dp=T_dp,
-                        x_ref=x_ref,
-                        T_ref=T_ref,
-                        P_sat=P_sat,
-                        G_ref=G_ref,
-                        G_air=G_air,
-                        h_o=h_o,
-                        m_ref_tube=m_ref_tube,
-                    )
-                    all_segments.append(seg_result)
-                    Q_row += seg_result.Q
-                    Q_row_lat += seg_result.Q_latent
+                    for seg_idx in range(self.N_seg):
+                        seg_result = self._solve_segment(
+                            row=row_idx, tube=col_idx, seg=seg_idx,
+                            T_air=T_air_local, W_air=W_air_local, T_dp=T_dp,
+                            x_ref=x_ref, T_ref=T_ref,
+                            P_sat=P_sat, G_ref=G_ref, G_air=G_air,
+                            h_o=h_o, m_ref_tube=m_ref_circ,
+                        )
+                        seg_dict[(col_idx, row_idx, seg_idx)] = seg_result
+                        Q_per_row[row_idx] += seg_result.Q
+                        Q_lat_per_row[row_idx] += seg_result.Q_latent
 
-                    # Update per-tube refrigerant state
-                    if 0 <= x_ref <= 1:
-                        if h_fg > 0 and m_ref_tube > 0:
-                            if inp.mode == "evap":
-                                dx = seg_result.Q / (m_ref_tube * h_fg)
-                                x_ref += dx
-                            else:
-                                dx = seg_result.Q / (m_ref_tube * h_fg)
-                                x_ref -= dx
+                        # Update refrigerant state
+                        if 0 <= x_ref <= 1:
+                            if h_fg > 0 and m_ref_circ > 0:
+                                dx = seg_result.Q / (m_ref_circ * h_fg)
+                                if inp.mode == "evap":
+                                    x_ref += dx
+                                else:
+                                    x_ref -= dx
+                        else:
+                            if x_ref > 1:
+                                try:
+                                    cp_v = ref.cp_v(P_sat)
+                                    if m_ref_circ > 0:
+                                        T_ref += seg_result.Q / (m_ref_circ * cp_v)
+                                except: pass
+                            elif x_ref < 0:
+                                try:
+                                    cp_l = ref.cp_l(P_sat)
+                                    if m_ref_circ > 0:
+                                        T_ref -= seg_result.Q / (m_ref_circ * cp_l)
+                                except: pass
+
+                circ_outlets.append((x_ref, T_ref))
+
+            # ── Update air temperature profile ──
+            T_air_profile[0] = inp.T_air_in
+            W_air_profile[0] = W_in
+            h_fg_water = 2501000.0
+
+            for row_idx in range(self.Nr):
+                Q_row = Q_per_row[row_idx]
+                Q_lat = Q_lat_per_row[row_idx]
+                if m_air > 0:
+                    h_air_cur = self.air.h_simple(T_air_profile[row_idx], W_air_profile[row_idx])
+                    if inp.mode == "evap":
+                        h_air_next = h_air_cur - Q_row / m_air
                     else:
-                        if x_ref > 1:
-                            try:
-                                cp_v = ref.cp_v(P_sat)
-                                if m_ref_tube > 0:
-                                    T_ref += seg_result.Q / (m_ref_tube * cp_v)
-                            except:
-                                pass
-                        elif x_ref < 0:
-                            try:
-                                cp_l = ref.cp_l(P_sat)
-                                if m_ref_tube > 0:
-                                    T_ref -= seg_result.Q / (m_ref_tube * cp_l)
-                            except:
-                                pass
-
-                # Store updated state for this tube
-                x_ref_tube[tube_idx] = x_ref
-                T_ref_tube[tube_idx] = T_ref
-
-            # Update air state after this row (enthalpy-based)
-            if m_air > 0:
-                if inp.mode == "evap":
-                    # Evaporator: air loses heat
-                    h_air_out = h_air_row - Q_row / m_air
+                        h_air_next = h_air_cur + Q_row / m_air
+                    W_removed = Q_lat / (m_air * h_fg_water) if m_air > 0 else 0
+                    W_next = max(W_air_profile[row_idx] - W_removed, 0)
+                    T_next = self.air.T_from_h_simple(h_air_next, W_next)
+                    T_air_profile[row_idx + 1] = T_next
+                    W_air_profile[row_idx + 1] = W_next
                 else:
-                    # Condenser: air gains heat
-                    h_air_out = h_air_row + Q_row / m_air
+                    T_air_profile[row_idx + 1] = T_air_profile[row_idx]
+                    W_air_profile[row_idx + 1] = W_air_profile[row_idx]
 
-                # Update W (humidity ratio) — only changes for wet evaporator
-                h_fg_water = 2501000.0
-                W_removed = Q_row_lat / (m_air * h_fg_water) if m_air > 0 else 0
-                W_air_next = W_air_row - W_removed
-                W_air_next = max(W_air_next, 0)
+        # ── Compile results ──
+        all_segments = []
+        for col_idx in range(self.Nt):
+            for row_idx in range(self.Nr):
+                for seg_idx in range(self.N_seg):
+                    key = (col_idx, row_idx, seg_idx)
+                    if key in seg_dict:
+                        all_segments.append(seg_dict[key])
 
-                # Update T from enthalpy
-                T_air_next = self.air.T_from_h_simple(h_air_out, W_air_next)
-
-                T_air_row = T_air_next
-                W_air_row = W_air_next
-                h_air_row = h_air_out
-
-            row_Q.append(Q_row)
-
-        # ===== Compile results =====
         Q_total = sum(s.Q for s in all_segments)
-        Q_lat = sum(s.Q_latent for s in all_segments)
-        Q_sen = Q_total - Q_lat
+        Q_lat_total = sum(s.Q_latent for s in all_segments)
+        Q_sen = Q_total - Q_lat_total
+
+        # Circuit outlet average
+        x_ref_out_avg = sum(o[0] for o in circ_outlets) / n_circ if circ_outlets else inp.x_in
+        T_ref_out_avg = sum(o[1] for o in circ_outlets) / n_circ if circ_outlets else inp.T_sat
+
+        T_air_out = T_air_profile[self.Nr]
+        W_air_out = W_air_profile[self.Nr]
+
+        row_Q = [sum(seg_dict.get((t, r, s), SegmentResult()).Q
+                     for t in range(self.Nt) for s in range(self.N_seg))
+                 for r in range(self.Nr)]
 
         result = SimulationResult()
         result.Q_total = Q_total
         result.Q_sensible = Q_sen
-        result.Q_latent = Q_lat
+        result.Q_latent = Q_lat_total
         result.SHR = Q_sen / Q_total if Q_total > 0 else 1.0
-        result.T_air_out = T_air_row
-        result.W_air_out = W_air_row
-        result.x_ref_out = sum(x_ref_tube) / len(x_ref_tube)
-        result.T_ref_out = sum(T_ref_tube) / len(T_ref_tube)
+        result.T_air_out = T_air_out
+        result.W_air_out = W_air_out
+        result.x_ref_out = x_ref_out_avg
+        result.T_ref_out = T_ref_out_avg
         result.segments = all_segments
         result.row_Q = row_Q
         result.correlations_used = self.corr
 
+        # Store circuit info
+        self.corr["n_circuits"] = n_circ
+        self.corr["circuit_mode"] = inp.ft_spec.circuit_mode if inp.hx_type == "FT" else "row_parallel"
+
         # Air-side pressure drop
-        result.dp_air = self._compute_dp_air(G_air, inp.T_air_in, T_air_row)
+        result.dp_air = self._compute_dp_air(G_air, inp.T_air_in, T_air_out)
 
         # Outlet RH
         try:
             import CoolProp.CoolProp as CP
-            result.RH_out = CP.HAPropsSI("R", "T", T_air_row, "W", W_air_row, "P", inp.P_atm)
+            result.RH_out = CP.HAPropsSI("R", "T", T_air_out, "W", W_air_out, "P", inp.P_atm)
         except:
             result.RH_out = 0.0
 

@@ -66,6 +66,8 @@ class FTSpecInput(BaseModel):
     slit_width: float = 0.002
     n_slits: int = 6
     N_seg: int = 5
+    circuit_mode: str = "row_parallel"  # row_parallel, serpentine_2, serpentine_4, single, custom
+    circuits: Optional[List] = None  # custom: [[row,col],[row,col],...] per circuit
 
 
 class MCHXSpecInput(BaseModel):
@@ -261,6 +263,8 @@ def simulate(req: SimRequest):
                 louver_pitch=ft_in.louver_pitch, louver_angle=ft_in.louver_angle,
                 slit_height=ft_in.slit_height, slit_width=ft_in.slit_width, n_slits=ft_in.n_slits,
                 N_seg=ft_in.N_seg,
+                circuit_mode=ft_in.circuit_mode,
+                circuits=ft_in.circuits or [],
             )
 
         # Build MCHX spec
@@ -298,6 +302,11 @@ def simulate(req: SimRequest):
             V_air_resolved = req.V_air if req.V_air is not None else 2.0
             CMM_resolved = V_air_resolved * A_face * 60.0
 
+        # Determine T_ref_in for single-phase entry
+        T_ref_in_K = None
+        if not req.two_phase_inlet and req.T_ref_in_C is not None:
+            T_ref_in_K = req.T_ref_in_C + 273.15
+
         sim_input = SimulationInput(
             hx_type=req.hx_type,
             mode=req.mode,
@@ -308,6 +317,7 @@ def simulate(req: SimRequest):
             T_sat=T_sat_K,
             m_ref=req.m_ref,
             x_in=x_in,
+            T_ref_in=T_ref_in_K,
             flow_arrangement=req.flow_arrangement,
             ft_spec=ft,
             mchx_spec=mchx,
@@ -429,6 +439,20 @@ def get_f_correlations(fin_type: str = "plain", hx_type: str = "FT"):
     available = get_available_f_correlations(ft)
     details = {cid: FSIDE_CORRELATIONS[cid] for cid in available if cid in FSIDE_CORRELATIONS}
     return {"fin_type": fin_type, "hx_type": hx_type, "available": available, "details": details}
+
+
+@app.get("/circuit_presets")
+def get_circuit_presets(Nr: int = 4, Nt: int = 4, flow: str = "counter"):
+    """Get all available circuit preset patterns."""
+    from models.geometry import generate_circuits
+    presets = {}
+    for mode in ["row_parallel", "serpentine_2", "serpentine_4", "single"]:
+        try:
+            circuits = generate_circuits(Nr, Nt, mode, flow)
+            presets[mode] = circuits
+        except:
+            pass
+    return {"Nr": Nr, "Nt": Nt, "flow": flow, "presets": presets}
 
 
 if __name__ == "__main__":

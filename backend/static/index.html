@@ -32,7 +32,7 @@ const DEFAULT_FT = {
   wavy_amplitude:0.001,wavy_wavelength:0.01,
   louver_pitch:0.0017,louver_angle:27,
   slit_height:0.001,slit_width:0.007,n_slits:4,
-  N_seg:10
+  N_seg:10,circuit_mode:"row_parallel"
 };
 const DEFAULT_MCHX = {
   W:0.6,H:0.4,D:0.02,n_slabs:1,ch_width:0.001,ch_height:0.0015,
@@ -527,6 +527,160 @@ function App() {
                 </div>
               </>)}
               <Field label="N_seg" unit="/tube" value={ftSpec.N_seg} onChange={v=>uF("N_seg",parseInt(v)||1)}/>
+
+              {/* ── Circuit Design ── */}
+              <div style={{borderLeft:`2px solid ${C.accent}`,paddingLeft:10,marginBottom:6,marginTop:6}}>
+                <div style={{fontSize:9,color:C.accent,fontWeight:700,marginBottom:4}}>REFRIGERANT CIRCUIT</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
+                  {[
+                    {k:"row_parallel",l:"Column별 독립"},
+                    {k:"serpentine_2",l:"2열 사행"},
+                    {k:"serpentine_4",l:"4열 사행"},
+                    {k:"single",l:"단일 회로"},
+                  ].map(v=>(
+                    <button key={v.k} onClick={()=>uF("circuit_mode",v.k)}
+                      style={{padding:"4px 8px",borderRadius:5,border:"none",cursor:"pointer",
+                        fontSize:9,fontWeight:700,fontFamily:"inherit",
+                        background:ftSpec.circuit_mode===v.k?C.accent:C.bg,
+                        color:ftSpec.circuit_mode===v.k?C.bg:C.dim}}>
+                      {v.l}
+                    </button>
+                  ))}
+                </div>
+                {/* Visual circuit map */}
+                {(()=>{
+                  const Nr=ftSpec.Nr, Nt=ftSpec.Nt;
+                  const counter = flow==="counter";
+                  // Generate circuits locally for preview
+                  const genCircuits=(mode)=>{
+                    if(mode==="single"){
+                      const c=[];
+                      for(let col=0;col<Nt;col++){
+                        const rows = ((col%2===0)===counter)?
+                          Array.from({length:Nr},(_,i)=>Nr-1-i):
+                          Array.from({length:Nr},(_,i)=>i);
+                        rows.forEach(r=>c.push([r,col]));
+                      }
+                      return [c];
+                    }
+                    if(mode.startsWith("serpentine")){
+                      const grp=parseInt(mode.split("_")[1])||2;
+                      const nc=Math.max(1,Math.floor(Nt/grp));
+                      const circs=[];
+                      for(let ci=0;ci<nc;ci++){
+                        const c=[];
+                        const cols=[];
+                        for(let g=0;g<grp&&ci*grp+g<Nt;g++) cols.push(ci*grp+g);
+                        cols.forEach((col,i)=>{
+                          const rows=((i%2===0)===counter)?
+                            Array.from({length:Nr},(_,j)=>Nr-1-j):
+                            Array.from({length:Nr},(_,j)=>j);
+                          rows.forEach(r=>c.push([r,col]));
+                        });
+                        circs.push(c);
+                      }
+                      const rem=Array.from({length:Nt-nc*grp},(_,i)=>nc*grp+i);
+                      if(rem.length>0){
+                        const c=[];
+                        rem.forEach((col,i)=>{
+                          const rows=((i%2===0)===counter)?
+                            Array.from({length:Nr},(_,j)=>Nr-1-j):
+                            Array.from({length:Nr},(_,j)=>j);
+                          rows.forEach(r=>c.push([r,col]));
+                        });
+                        circs.push(c);
+                      }
+                      return circs;
+                    }
+                    // row_parallel
+                    return Array.from({length:Nt},(_,col)=>{
+                      const rows=counter?Array.from({length:Nr},(_,i)=>Nr-1-i):Array.from({length:Nr},(_,i)=>i);
+                      return rows.map(r=>[r,col]);
+                    });
+                  };
+                  const circuits = genCircuits(ftSpec.circuit_mode);
+                  const nc = circuits.length;
+
+                  // Build cell map: [row][col] → {circ, order}
+                  const cellMap = Array.from({length:Nr},()=>Array.from({length:Nt},()=>null));
+                  circuits.forEach((circ,ci)=>{
+                    circ.forEach(([r,c],idx)=>{
+                      if(r>=0&&r<Nr&&c>=0&&c<Nt) cellMap[r][c]={circ:ci,order:idx};
+                    });
+                  });
+
+                  // Circuit colors
+                  const circColors = ["#4ecdc4","#ff6b6b","#45b7d1","#96ceb4","#feca57","#ff9ff3","#54a0ff","#5f27cd"];
+
+                  const cW=32, cH=20, pad=4;
+                  const svgW = Nt*cW+60;
+                  const svgH = Nr*cH+40;
+
+                  return (
+                    <div style={{overflowX:"auto"}}>
+                      <svg width={svgW} height={svgH} style={{display:"block"}}>
+                        {/* Air arrow */}
+                        <defs><marker id="arrCE" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+                          <polygon points="0 0, 6 2, 0 4" fill={C.accent}/></marker></defs>
+                        <line x1={2} y1={12} x2={2} y2={Nr*cH+18} stroke={C.accent} strokeWidth={1.5} markerEnd="url(#arrCE)"/>
+                        <text x={2} y={8} textAnchor="middle" style={{fontSize:7,fill:C.accent,fontWeight:700}}>AIR</text>
+
+                        {/* Column labels */}
+                        {Array.from({length:Nt},(_,c)=>(
+                          <text key={`cl${c}`} x={20+c*cW+cW/2} y={10} textAnchor="middle"
+                            style={{fontSize:8,fill:C.dim}}>C{c}</text>
+                        ))}
+
+                        {/* Row labels */}
+                        {Array.from({length:Nr},(_,r)=>(
+                          <text key={`rl${r}`} x={16} y={18+r*cH+cH/2+3} textAnchor="end"
+                            style={{fontSize:8,fill:C.dim}}>R{r}</text>
+                        ))}
+
+                        {/* Cells */}
+                        {Array.from({length:Nr},(_,r)=>
+                          Array.from({length:Nt},(_,c)=>{
+                            const info = cellMap[r][c];
+                            const x=20+c*cW, y=18+r*cH;
+                            const col = info ? circColors[info.circ%circColors.length] : C.bg;
+                            return (
+                              <g key={`${r}-${c}`}>
+                                <rect x={x} y={y} width={cW-2} height={cH-2} rx={3}
+                                  fill={col} stroke={C.border} strokeWidth={0.5} opacity={0.85}/>
+                                <text x={x+cW/2-1} y={y+cH/2+1} textAnchor="middle"
+                                  style={{fontSize:7,fill:"#fff",fontWeight:700,textShadow:"0 0 2px rgba(0,0,0,0.5)"}}>
+                                  {info ? info.order+1 : "—"}
+                                </text>
+                              </g>
+                            );
+                          })
+                        )}
+
+                        {/* Flow arrows between consecutive tube-passes */}
+                        {circuits.map((circ,ci)=>{
+                          const col = circColors[ci%circColors.length];
+                          return circ.slice(0,-1).map(([r1,c1],idx)=>{
+                            const [r2,c2]=circ[idx+1];
+                            const x1=20+c1*cW+cW/2-1, y1=18+r1*cH+cH/2-1;
+                            const x2=20+c2*cW+cW/2-1, y2=18+r2*cH+cH/2-1;
+                            // Only draw arrows for column transitions (U-bends)
+                            if(c1!==c2) return (
+                              <line key={`a${ci}-${idx}`} x1={x1} y1={y1} x2={x2} y2={y2}
+                                stroke={col} strokeWidth={1.5} strokeDasharray="3,2" opacity={0.7}/>
+                            );
+                            return null;
+                          });
+                        })}
+
+                        {/* Legend */}
+                        <text x={20+Nt*cW+4} y={24} style={{fontSize:7,fill:C.dim}}>
+                          {nc}회로
+                        </text>
+                      </svg>
+                    </div>
+                  );
+                })()}
+              </div>
             </InputGroup>
           ):(
             <InputGroup label="📐 MCHX Geometry">
