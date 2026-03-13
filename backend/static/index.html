@@ -239,7 +239,7 @@ function App() {
   },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr,fCorr,refCorr,solverCfg,dpRefCorr]);
 
   const segData=result?.segments?.filter(s=>s.tube===0)?.map(s=>({
-    name:`R${s.row}S${s.seg}`,Q:s.Q,T_wall:s.T_wall,h_i:s.h_i,x:s.x_ref,eta_o:s.eta_o
+    name:`R${s.row}S${s.seg}`,Q:s.Q,T_wall:s.T_wall,h_i:s.h_i,x:s.x_ref,eta_o:s.eta_o,dp_ref:s.dp_ref
   }))||[];
   const rowData=result?.row_Q?.map((q,i)=>({name:`R${i}`,Q:q}))||[];
   const mc=mode==="evap"?C.accent:C.accent3;
@@ -1469,7 +1469,7 @@ function App() {
                   <div style={{fontSize:11,color:C.accent,fontWeight:700,marginBottom:10,letterSpacing:1}}>SEGMENT DETAILS (Tube 0)</div>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                     <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
-                      {["Row","Seg","Q [W]","T_wall","T_air","x_ref","h_i","h_o","η_o","Wet","✓"].map(h=>
+                      {["Row","Seg","Q [W]","T_wall","T_air","x_ref","h_i","h_o","η_o","ΔP_ref","Wet","✓"].map(h=>
                         <th key={h} style={{padding:"6px 8px",textAlign:"right",color:C.dim,fontWeight:600}}>{h}</th>
                       )}</tr></thead>
                     <tbody>
@@ -1484,6 +1484,7 @@ function App() {
                           <td style={{padding:"5px 8px",textAlign:"right"}}>{s.h_i.toFixed(0)}</td>
                           <td style={{padding:"5px 8px",textAlign:"right"}}>{s.h_o.toFixed(0)}</td>
                           <td style={{padding:"5px 8px",textAlign:"right"}}>{s.eta_o.toFixed(3)}</td>
+                          <td style={{padding:"5px 8px",textAlign:"right",color:C.warn}}>{s.dp_ref.toFixed(1)}</td>
                           <td style={{padding:"5px 8px",textAlign:"center"}}>{s.is_wet?"💧":"—"}</td>
                           <td style={{padding:"5px 8px",textAlign:"center",color:s.converged?C.success:C.err}}>{s.converged?"✓":"✗"}</td>
                         </tr>
@@ -1512,6 +1513,10 @@ function App() {
                       {key:"h_i",color:C.accent,label:"h_i [W/m²K]"},
                       {key:"eta_o",color:C.success,label:"η_o",min:0,max:1}
                     ]}/>
+                  </div>
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}>
+                    <div style={{fontSize:11,color:C.warn,fontWeight:700,marginBottom:6,letterSpacing:1}}>ΔP_ref PER SEGMENT (Tube 0)</div>
+                    <BarChart data={segData} dataKey="dp_ref" nameKey="name" color={C.warn} height={200}/>
                   </div>
                 </div>
               )}
