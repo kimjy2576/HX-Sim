@@ -2276,7 +2276,230 @@ def h_single_gnielinski(Re, Pr, k, Di):
     return Nu * k / Di
 
 
-# ── DISPATCHERS ──
+# ====================================================================
+# REFRIGERANT-SIDE PRESSURE DROP
+# ====================================================================
+
+REFSIDE_DP_CORRELATIONS = {
+    # ── FT (conventional tube) ──
+    "friedel1979": {
+        "name": "Friedel (1979)",
+        "ref": "European Two-Phase Flow Group Meeting, Ispra",
+        "note": "가장 범용. 25000+ data. μ_l/μ_v<1000, 전건도.",
+        "hx_type": ["FT", "MCHX"],
+    },
+    "lockhart_martinelli1949": {
+        "name": "Lockhart-Martinelli (1949)",
+        "ref": "Chem. Eng. Prog. 45(1), 39-48",
+        "note": "고전. Chisholm C계수. 단순하지만 저건도 과대예측.",
+        "hx_type": ["FT"],
+    },
+    "muller_steinhagen1986": {
+        "name": "Müller-Steinhagen & Heck (1986)",
+        "ref": "Can. J. Chem. Eng. 64, 297-304",
+        "note": "단순+정확. 9300 data. 고건도에서도 안정적.",
+        "hx_type": ["FT", "MCHX"],
+    },
+    "kim_mudawar_dp2012": {
+        "name": "Kim & Mudawar (2012) dp",
+        "ref": "IJHMT 55, 3246-3261",
+        "note": "미니채널 전용. Suratman 기반 C계수. Dh<3mm.",
+        "hx_type": ["MCHX"],
+    },
+}
+
+
+def _f_darcy(Re, Di, roughness=1.5e-6):
+    """Churchill (1977) friction factor — all regimes."""
+    if Re < 10:
+        return 64.0 / max(Re, 1)
+    e_D = roughness / Di
+    A = (2.457 * math.log(1.0 / ((7.0 / Re) ** 0.9 + 0.27 * e_D))) ** 16
+    B = (37530.0 / Re) ** 16
+    f = 8 * ((8.0 / Re) ** 12 + 1.0 / (A + B) ** 1.5) ** (1.0 / 12.0)
+    return f
+
+
+def dp_single_phase(G, Di, L, ref, P, x_or_phase="liquid"):
+    """Single-phase frictional dp [Pa] for a tube segment."""
+    if x_or_phase == "liquid" or x_or_phase == "l":
+        mu = ref.mu_l(P); rho = ref.rho_l(P)
+    else:
+        mu = ref.mu_v(P); rho = ref.rho_v(P)
+    Re = max(G * Di / mu, 10) if mu > 0 else 100
+    f = _f_darcy(Re, Di)
+    dp = f * L / Di * G ** 2 / (2 * rho) if (Di > 0 and rho > 0) else 0
+    return max(dp, 0)
+
+
+def dp_friedel1979(x, G, Di, L, ref, P, **kw):
+    """
+    Friedel (1979) — Two-phase frictional pressure drop.
+    
+    dp_tp = dp_lo × φ²_lo
+    φ²_lo = E + 3.24·F·H / (Fr^0.045 · We^0.035)
+    
+    E = (1-x)² + x²·(ρ_l·f_vo)/(ρ_v·f_lo)
+    F = x^0.78 · (1-x)^0.224
+    H = (ρ_l/ρ_v)^0.91 · (μ_v/μ_l)^0.19 · (1-μ_v/μ_l)^0.7
+    """
+    x = max(0.001, min(x, 0.999))
+    rho_l = ref.rho_l(P); rho_v = ref.rho_v(P)
+    mu_l = ref.mu_l(P); mu_v = ref.mu_v(P)
+    sigma_val = ref.sigma(P)
+
+    Re_lo = max(G * Di / mu_l, 10)
+    Re_vo = max(G * Di / mu_v, 10)
+    f_lo = _f_darcy(Re_lo, Di)
+    f_vo = _f_darcy(Re_vo, Di)
+
+    # dp_lo (all liquid)
+    dp_lo = f_lo * L / Di * G ** 2 / (2 * rho_l) if (Di > 0 and rho_l > 0) else 0
+
+    # Void fraction (homogeneous for Fr/We)
+    rho_tp = 1.0 / (x / rho_v + (1 - x) / rho_l) if (rho_v > 0 and rho_l > 0) else rho_l
+
+    # Froude number
+    Fr = G ** 2 / (9.81 * Di * rho_tp ** 2) if (Di > 0 and rho_tp > 0) else 100
+    # Weber number
+    We = G ** 2 * Di / (rho_tp * sigma_val) if (rho_tp > 0 and sigma_val > 0) else 100
+
+    E = (1 - x) ** 2 + x ** 2 * (rho_l * f_vo) / max(rho_v * f_lo, 1e-10)
+    F_val = x ** 0.78 * (1 - x) ** 0.224
+    mu_ratio = mu_v / mu_l if mu_l > 0 else 0.1
+    rho_ratio = rho_l / max(rho_v, 0.1)
+    H = rho_ratio ** 0.91 * mu_ratio ** 0.19 * max(1 - mu_ratio, 0.01) ** 0.7
+
+    phi2 = E + 3.24 * F_val * H / (max(Fr, 0.01) ** 0.045 * max(We, 0.01) ** 0.035)
+    return max(dp_lo * phi2, 0)
+
+
+def dp_lockhart_martinelli1949(x, G, Di, L, ref, P, **kw):
+    """
+    Lockhart-Martinelli (1949) with Chisholm C parameter.
+    
+    φ²_l = 1 + C/Xtt + 1/Xtt²
+    C = 20 (turbulent-turbulent), 12 (laminar-turbulent), etc.
+    dp_tp = dp_l × φ²_l
+    """
+    x = max(0.001, min(x, 0.999))
+    rho_l = ref.rho_l(P); mu_l = ref.mu_l(P)
+
+    Re_l = max(G * (1 - x) * Di / mu_l, 10)
+    f_l = _f_darcy(Re_l, Di)
+    dp_l = f_l * L / Di * (G * (1 - x)) ** 2 / (2 * rho_l) if (Di > 0 and rho_l > 0) else 0
+
+    Xtt = ref.Xtt(x, P)
+
+    # Chisholm C parameter
+    Re_v = max(G * x * Di / ref.mu_v(P), 10) if ref.mu_v(P) > 0 else 100
+    if Re_l > 2300 and Re_v > 2300:
+        C = 20
+    elif Re_l < 2300 and Re_v > 2300:
+        C = 12
+    elif Re_l > 2300 and Re_v < 2300:
+        C = 10
+    else:
+        C = 5
+
+    phi2_l = 1 + C / max(Xtt, 0.001) + 1 / max(Xtt ** 2, 1e-6)
+    return max(dp_l * phi2_l, 0)
+
+
+def dp_muller_steinhagen1986(x, G, Di, L, ref, P, **kw):
+    """
+    Müller-Steinhagen & Heck (1986) — Simple + accurate.
+    
+    (dp/dz)_tp = A·(1-x)^(1/3) + B·x³
+    A = (dp/dz)_lo + 2·[(dp/dz)_vo - (dp/dz)_lo]·x
+    B = (dp/dz)_vo
+    """
+    x = max(0.001, min(x, 0.999))
+    rho_l = ref.rho_l(P); rho_v = ref.rho_v(P)
+    mu_l = ref.mu_l(P); mu_v = ref.mu_v(P)
+
+    Re_lo = max(G * Di / mu_l, 10)
+    Re_vo = max(G * Di / mu_v, 10)
+    f_lo = _f_darcy(Re_lo, Di)
+    f_vo = _f_darcy(Re_vo, Di)
+
+    dpdz_lo = f_lo / Di * G ** 2 / (2 * rho_l) if (Di > 0 and rho_l > 0) else 0
+    dpdz_vo = f_vo / Di * G ** 2 / (2 * rho_v) if (Di > 0 and rho_v > 0) else 0
+
+    A = dpdz_lo + 2 * (dpdz_vo - dpdz_lo) * x
+    B = dpdz_vo
+
+    dpdz_tp = A * (1 - x) ** (1.0 / 3.0) + B * x ** 3
+    return max(dpdz_tp * L, 0)
+
+
+def dp_kim_mudawar_dp2012(x, G, Di, L, ref, P, **kw):
+    """
+    Kim & Mudawar (2012) dp — Mini/micro channel.
+    Suratman-number based C coefficient in L-M framework.
+    
+    φ²_l = 1 + C/Xtt + 1/Xtt²
+    C depends on laminar/turbulent regime + Su_vo
+    """
+    x = max(0.001, min(x, 0.999))
+    Dh = kw.get("Dh", Di)
+    rho_l = ref.rho_l(P); rho_v = ref.rho_v(P)
+    mu_l = ref.mu_l(P); mu_v = ref.mu_v(P)
+    sigma_val = ref.sigma(P)
+
+    Re_l = max(G * (1 - x) * Dh / mu_l, 10)
+    Re_v = max(G * x * Dh / mu_v, 10)
+
+    # Suratman number (liquid)
+    Su_vo = rho_v * sigma_val * Dh / mu_v ** 2 if mu_v > 0 else 1e6
+
+    # C coefficient based on flow regime
+    if Re_l >= 2000 and Re_v >= 2000:
+        C = 0.39 * Re_lo_val ** 0.03 if False else 0.39 * (Re_l / (1 - x)) ** 0.03 * Su_vo ** 0.10 * (rho_l / rho_v) ** 0.35
+    elif Re_l < 2000 and Re_v >= 2000:
+        C = 8.7e-4 * (Re_l / (1 - x)) ** 0.17 * Su_vo ** 0.50 * (rho_l / rho_v) ** 0.14
+    elif Re_l >= 2000 and Re_v < 2000:
+        C = 0.0015 * (Re_l / (1 - x)) ** 0.59 * Su_vo ** 0.19 * (rho_l / rho_v) ** 0.36
+    else:
+        C = 3.5e-5 * (Re_l / max(1 - x, 0.001)) ** 0.44 * Su_vo ** 0.50 * (rho_l / rho_v) ** 0.48
+
+    f_l = _f_darcy(Re_l, Dh)
+    dp_l = f_l * L / Dh * (G * (1 - x)) ** 2 / (2 * rho_l) if (Dh > 0 and rho_l > 0) else 0
+    Xtt = ref.Xtt(x, P)
+    phi2_l = 1 + C / max(Xtt, 0.001) + 1 / max(Xtt ** 2, 1e-6)
+    return max(dp_l * phi2_l, 0)
+
+
+# ── DP DISPATCHER ──
+
+_DP_DISPATCH = {
+    "friedel1979": dp_friedel1979,
+    "lockhart_martinelli1949": dp_lockhart_martinelli1949,
+    "muller_steinhagen1986": dp_muller_steinhagen1986,
+    "kim_mudawar_dp2012": dp_kim_mudawar_dp2012,
+}
+
+
+def compute_dp_ref_seg(corr_id, x, G, Di, L, ref, P, **kw):
+    """Compute refrigerant dp [Pa] for one segment."""
+    if x > 1.0 or x < 0.0:
+        phase = "vapor" if x > 1 else "liquid"
+        return dp_single_phase(G, Di, L, ref, P, phase)
+    fn = _DP_DISPATCH.get(corr_id, dp_friedel1979)
+    return fn(x=x, G=G, Di=Di, L=L, ref=ref, P=P, **kw)
+
+
+def recommend_dp_ref_correlation(hx_type="FT"):
+    """Recommend dp correlation."""
+    if hx_type == "MCHX":
+        return "kim_mudawar_dp2012"
+    return "friedel1979"
+
+
+def get_available_dp_correlations(hx_type="FT"):
+    """Get available dp correlations filtered by hx_type."""
+    return [k for k, v in REFSIDE_DP_CORRELATIONS.items()
+            if hx_type in v.get("hx_type", ["FT", "MCHX"])]
 
 _EVAP_DISPATCH = {
     "chen1966": h_evap_chen1966,

@@ -20,7 +20,8 @@ from models.correlations import (
     FSIDE_CORRELATIONS, get_available_f_correlations,
     recommend_f_correlation,
     REFSIDE_EVAP_CORRELATIONS, REFSIDE_COND_CORRELATIONS,
-    get_available_ref_correlations,
+    REFSIDE_DP_CORRELATIONS,
+    get_available_ref_correlations, get_available_dp_correlations,
 )
 
 app = FastAPI(
@@ -127,6 +128,7 @@ class SimRequest(BaseModel):
     air_f_corr: Optional[str] = Field(None, description="Air-side f-factor correlation ID. None = auto.")
     evap_corr: Optional[str] = Field(None, description="Evaporation correlation ID. None = auto.")
     cond_corr: Optional[str] = Field(None, description="Condensation correlation ID. None = auto.")
+    dp_ref_corr: Optional[str] = Field(None, description="Refrigerant dp correlation ID. None = auto.")
 
     # Geometry
     ft_spec: Optional[FTSpecInput] = None
@@ -147,6 +149,7 @@ class SegmentOut(BaseModel):
     h_i: float
     h_o: float
     eta_o: float
+    dp_ref: float
     is_wet: bool
     converged: bool
 
@@ -162,6 +165,7 @@ class SimResponse(BaseModel):
     x_ref_out: float
     T_ref_out_C: float
     dp_air: float
+    dp_ref: float = 0.0
     T_sat_C: float = 0.0
     P_sat_kPa: float = 0.0
     V_air: float = 0.0
@@ -390,6 +394,8 @@ def simulate(req: SimRequest):
             solver.corr["evap"] = req.evap_corr
         if req.cond_corr:
             solver.corr["cond"] = req.cond_corr
+        if req.dp_ref_corr:
+            solver.corr["dp_ref"] = req.dp_ref_corr
 
         result = solver.solve()
 
@@ -407,6 +413,7 @@ def simulate(req: SimRequest):
                 h_i=round(s.h_i, 1),
                 h_o=round(s.h_o, 1),
                 eta_o=round(s.eta_o, 4),
+                dp_ref=round(s.dp_ref, 2),
                 is_wet=s.is_wet,
                 converged=s.converged,
             )
@@ -424,6 +431,7 @@ def simulate(req: SimRequest):
             x_ref_out=round(result.x_ref_out, 4),
             T_ref_out_C=round(result.T_ref_out - 273.15, 2),
             dp_air=round(result.dp_air, 1),
+            dp_ref=round(result.dp_ref, 1),
             T_sat_C=round(T_sat_C_resolved, 2),
             P_sat_kPa=round(P_sat_kPa_resolved, 1),
             V_air=round(V_air_resolved, 3),
@@ -480,6 +488,14 @@ def get_ref_correlations(mode: str = "evap", hx_type: str = "FT"):
     registry = REFSIDE_EVAP_CORRELATIONS if mode == "evap" else REFSIDE_COND_CORRELATIONS
     details = {cid: registry[cid] for cid in available}
     return {"mode": mode, "hx_type": hx_type, "available": available, "details": details}
+
+
+@app.get("/dp_ref_correlations")
+def get_dp_ref_correlations_ep(hx_type: str = "FT"):
+    """Get available refrigerant-side pressure drop correlations."""
+    available = get_available_dp_correlations(hx_type)
+    details = {cid: REFSIDE_DP_CORRELATIONS[cid] for cid in available}
+    return {"hx_type": hx_type, "available": available, "details": details}
 
 
 if __name__ == "__main__":

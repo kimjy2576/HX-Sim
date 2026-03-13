@@ -156,6 +156,7 @@ function App() {
   const [airCorr,setAirCorr]=useState({mode:"auto",selected:null});
   const [fCorr,setFCorr]=useState({mode:"auto",selected:null});
   const [refCorr,setRefCorr]=useState({evap:{mode:"auto",selected:null},cond:{mode:"auto",selected:null}});
+  const [dpRefCorr,setDpRefCorr]=useState({mode:"auto",selected:null});
   const [result,setResult]=useState(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -172,7 +173,7 @@ function App() {
   // ── Save / Load defaults via localStorage ──
   const STORAGE_KEY = "hxsim_defaults";
   const [saveFlash,setSaveFlash]=useState(false);
-  const collectState = ()=>({hxType,mode,airIn,refIn,flow,solverCfg,ftSpec,mchxSpec,airCorr,fCorr,refCorr});
+  const collectState = ()=>({hxType,mode,airIn,refIn,flow,solverCfg,ftSpec,mchxSpec,airCorr,fCorr,refCorr,dpRefCorr});
   const saveDefaults = ()=>{
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(collectState())); }catch(e){}
     setSaveFlash(true); setTimeout(()=>setSaveFlash(false),1500);
@@ -186,6 +187,7 @@ function App() {
     setFtSpec({...DEFAULT_FT}); setMchxSpec({...DEFAULT_MCHX});
     setAirCorr({mode:"auto",selected:null}); setFCorr({mode:"auto",selected:null});
     setRefCorr({evap:{mode:"auto",selected:null},cond:{mode:"auto",selected:null}});
+    setDpRefCorr({mode:"auto",selected:null});
   };
   useEffect(()=>{
     try {
@@ -203,6 +205,7 @@ function App() {
       if(d.airCorr) setAirCorr(p=>({...p,...d.airCorr}));
       if(d.fCorr) setFCorr(p=>({...p,...d.fCorr}));
       if(d.refCorr) setRefCorr(p=>({...p,...d.refCorr}));
+      if(d.dpRefCorr) setDpRefCorr(p=>({...p,...d.dpRefCorr}));
     }catch(e){}
   },[]);
 
@@ -223,6 +226,7 @@ function App() {
       if(fCorr.mode==="manual"&&fCorr.selected) body.air_f_corr=fCorr.selected;
       if(refCorr.evap.mode==="manual"&&refCorr.evap.selected) body.evap_corr=refCorr.evap.selected;
       if(refCorr.cond.mode==="manual"&&refCorr.cond.selected) body.cond_corr=refCorr.cond.selected;
+      if(dpRefCorr.mode==="manual"&&dpRefCorr.selected) body.dp_ref_corr=dpRefCorr.selected;
       if(refIn.stateMode==="T") body.T_sat_C=refIn.T_sat; else body.P_sat_kPa=refIn.P_sat;
       if(!refIn.twoPhase&&refIn.T_ref_in!==null) body.T_ref_in_C=refIn.T_ref_in;
       if(hxType==="FT") body.ft_spec=ftSpec; else body.mchx_spec=mchxSpec;
@@ -232,7 +236,7 @@ function App() {
       if(!res.ok){const e=await res.json();throw new Error(e.detail||"Failed");}
       setResult(await res.json());setTab("overview");
     }catch(e){setError(e.message);}finally{setLoading(false);}
-  },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr,fCorr,refCorr,solverCfg]);
+  },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr,fCorr,refCorr,solverCfg,dpRefCorr]);
 
   const segData=result?.segments?.filter(s=>s.tube===0)?.map(s=>({
     name:`R${s.row}S${s.seg}`,Q:s.Q,T_wall:s.T_wall,h_i:s.h_i,x:s.x_ref,eta_o:s.eta_o
@@ -618,6 +622,58 @@ function App() {
                         <span style={{color:C.text,fontWeight:600}}>
                           {result.correlations_used?.[key]||"auto"}
                         </span>
+                      </div>
+                    )}
+                  </>);
+                })()}
+              </div>
+              {/* ── Refrigerant ΔP Correlation ── */}
+              <div style={{borderLeft:`2px solid ${C.warn}`,paddingLeft:10,marginBottom:6}}>
+                <div style={{fontSize:9,color:C.warn,fontWeight:700,marginBottom:4}}>REFRIGERANT ΔP</div>
+                {(()=>{
+                  const isMCHX = hxType==="MCHX";
+                  const corrs = isMCHX?{
+                    friedel1979:{l:"Friedel(1979)",d:"범용, FT+MCHX"},
+                    muller_steinhagen1986:{l:"Müller-S.(1986)",d:"단순+정확, 9300 data"},
+                    kim_mudawar_dp2012:{l:"Kim-M.(2012)dp",d:"미니채널 Su 기반"},
+                  }:{
+                    friedel1979:{l:"Friedel(1979)",d:"범용 φ²_lo, 25000+ data"},
+                    lockhart_martinelli1949:{l:"L-M(1949)",d:"고전, Chisholm C"},
+                    muller_steinhagen1986:{l:"Müller-S.(1986)",d:"단순+정확, 고건도 안정"},
+                  };
+                  return (<>
+                    <div style={{display:"flex",gap:4,marginBottom:4}}>
+                      {["auto","manual"].map(m=>(
+                        <button key={m} onClick={()=>setDpRefCorr(p=>({...p,mode:m}))}
+                          style={{padding:"3px 8px",borderRadius:5,border:"none",cursor:"pointer",
+                            fontSize:9,fontWeight:700,fontFamily:"inherit",
+                            background:dpRefCorr.mode===m?(m==="auto"?C.accent:C.warn):C.bg,
+                            color:dpRefCorr.mode===m?C.bg:C.dim}}>
+                          {m.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                    {dpRefCorr.mode==="manual"&&(
+                      <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                        {Object.entries(corrs).map(([id,info])=>{
+                          const sel = dpRefCorr.selected===id;
+                          return (
+                            <button key={id} onClick={()=>setDpRefCorr(p=>({...p,selected:id}))}
+                              style={{textAlign:"left",padding:"4px 8px",borderRadius:6,border:"none",cursor:"pointer",
+                                background:sel?`${C.warn}22`:C.bg,fontSize:9,fontFamily:"inherit",
+                                color:sel?C.warn:C.dim}}>
+                              <span style={{fontWeight:700}}>{info.l}</span>
+                              <span style={{fontSize:8,marginLeft:4,opacity:0.7}}>{info.d}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {dpRefCorr.mode==="auto"&&result?.correlations_used?.dp_ref&&(
+                      <div style={{fontSize:10,padding:"4px 8px",borderRadius:5,
+                        background:`${C.warn}11`,border:`1px solid ${C.warn}33`}}>
+                        <span style={{fontWeight:700,color:C.warn}}>⚡</span>{" "}
+                        <span style={{color:C.text,fontWeight:600}}>{result.correlations_used.dp_ref}</span>
                       </div>
                     )}
                   </>);
@@ -1061,6 +1117,7 @@ function App() {
                 </div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
                   <Metric label="ΔP_air" value={result.dp_air.toFixed(1)} unit="Pa" color={C.dim}/>
+                  <Metric label="ΔP_ref" value={result.dp_ref>=1000?(result.dp_ref/1000).toFixed(2):result.dp_ref.toFixed(1)} unit={result.dp_ref>=1000?"kPa":"Pa"} color={C.warn}/>
                   <Metric label="RH_out" value={(result.RH_out*100).toFixed(1)} unit="%" color={C.accent2}/>
                 </div>
                 {/* Convergence info */}
@@ -1174,6 +1231,7 @@ function App() {
                   h_i:{label:"h_i [W/m²K]",key:"h_i",fmt:v=>v.toFixed(0)},
                   h_o:{label:"h_o [W/m²K]",key:"h_o",fmt:v=>v.toFixed(0)},
                   eta_o:{label:"η_o [-]",key:"eta_o",fmt:v=>v.toFixed(3)},
+                  dp_ref:{label:"ΔP_ref [Pa]",key:"dp_ref",fmt:v=>v.toFixed(1)},
                 };
                 const cv = vars[contourVar] || vars.T_wall;
 

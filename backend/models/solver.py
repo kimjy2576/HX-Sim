@@ -12,8 +12,10 @@ from .correlations import (
     compute_f_factor, recommend_f_correlation, get_available_f_correlations,
     FSIDE_CORRELATIONS,
     REFSIDE_EVAP_CORRELATIONS, REFSIDE_COND_CORRELATIONS,
+    REFSIDE_DP_CORRELATIONS,
     h_with_transition,
     h_single_gnielinski,
+    compute_dp_ref_seg, recommend_dp_ref_correlation,
 )
 
 
@@ -79,6 +81,7 @@ class SegmentResult:
     h_i: float = 0.0           # refrigerant-side HTC
     h_o: float = 0.0           # air-side HTC
     eta_o: float = 0.0         # overall fin efficiency
+    dp_ref: float = 0.0        # refrigerant-side dp for this segment [Pa]
     is_wet: bool = False
     converged: bool = False
     n_iter: int = 0
@@ -97,6 +100,7 @@ class SimulationResult:
     x_ref_out: float = 0.0
     T_ref_out: float = 0.0
     dp_air: float = 0.0
+    dp_ref: float = 0.0        # refrigerant-side total dp [Pa] (max across circuits)
     segments: List[SegmentResult] = field(default_factory=list)
     row_Q: List[float] = field(default_factory=list)
     correlations_used: Dict = field(default_factory=dict)
@@ -198,6 +202,11 @@ class HXSolver:
         G_air = m_air / self.geo.A_c if self.geo.A_c > 0 else 5.0
         h_o = self._compute_h_o(G_air, inp.T_air_in)
         h_fg = ref.h_fg(P_sat)
+        L_seg = self.geo.L_seg if hasattr(self.geo, 'L_seg') and self.geo.L_seg > 0 else 0.05
+
+        # Refrigerant dp correlation
+        dp_corr_id = self.corr.get("dp_ref", recommend_dp_ref_correlation(inp.hx_type))
+        self.corr["dp_ref"] = dp_corr_id
 
         # ── Outer iteration for air temperature convergence ──
         # Air state per column per row: T_air_2d[col][row]
@@ -229,10 +238,10 @@ class HXSolver:
                 T_ref = inp.T_sat
                 if inp.T_ref_in is not None and (inp.x_in >= 1.0 or inp.x_in <= 0.0):
                     T_ref = inp.T_ref_in
+                dp_circ = 0.0  # accumulate dp for this circuit
 
                 for pass_idx, (row_idx, col_idx) in enumerate(path):
                     # Alternate segment direction per tube pass (U-bend)
-                    # Even pass: seg 0 → N-1, Odd pass: seg N-1 → 0
                     if pass_idx % 2 == 0:
                         seg_order = range(Ns)
                     else:
@@ -249,6 +258,17 @@ class HXSolver:
                             P_sat=P_sat, G_ref=G_ref, G_air=G_air,
                             h_o=h_o, m_ref_tube=m_ref_circ,
                         )
+
+                        # Refrigerant pressure drop for this segment
+                        try:
+                            dp_seg = compute_dp_ref_seg(
+                                dp_corr_id, x_ref, G_ref, self.Di, L_seg,
+                                ref, P_sat, Dh=self.Di)
+                        except:
+                            dp_seg = 0.0
+                        seg_result.dp_ref = dp_seg
+                        dp_circ += dp_seg
+
                         seg_dict[(col_idx, row_idx, seg_idx)] = seg_result
 
                         # Update refrigerant state
@@ -273,7 +293,7 @@ class HXSolver:
                                         T_ref -= seg_result.Q / (m_ref_circ * cp_l)
                                 except: pass
 
-                circ_outlets.append((x_ref, T_ref))
+                circ_outlets.append((x_ref, T_ref, dp_circ))
 
             # ── Check outer convergence ──
             Q_this = sum(s.Q for s in seg_dict.values())
@@ -362,6 +382,7 @@ class HXSolver:
 
         x_ref_out_avg = sum(o[0] for o in circ_outlets) / n_circ if circ_outlets else inp.x_in
         T_ref_out_avg = sum(o[1] for o in circ_outlets) / n_circ if circ_outlets else inp.T_sat
+        dp_ref_max = max(o[2] for o in circ_outlets) if circ_outlets else 0.0
 
         T_air_out = sum(T_air_3d[c][s][self.Nr]
                         for c in range(self.Nt) for s in range(Ns)) / max(self.Nt * Ns, 1)
@@ -404,6 +425,7 @@ class HXSolver:
 
         # Air-side pressure drop
         result.dp_air = self._compute_dp_air(G_air, inp.T_air_in, T_air_out)
+        result.dp_ref = dp_ref_max
 
         # Outlet RH
         try:
