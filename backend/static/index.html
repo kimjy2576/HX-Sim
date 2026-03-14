@@ -191,8 +191,9 @@ function App() {
 
   // ── Save / Load defaults via localStorage ──
   const STORAGE_KEY = "hxsim_defaults";
+  const STORAGE_VER = 2; // increment to invalidate old saves
   const [saveFlash,setSaveFlash]=useState(false);
-  const collectState = ()=>({hxType,mode,airIn,refIn,flow,solverCfg,corrFact,ftSpec,mchxSpec,airCorr,fCorr,refCorr,dpRefCorr});
+  const collectState = ()=>({_ver:STORAGE_VER,hxType,mode,airIn,refIn,flow,solverCfg,corrFact,ftSpec,mchxSpec,airCorr,fCorr,refCorr,dpRefCorr});
   const saveDefaults = ()=>{
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(collectState())); }catch(e){}
     setSaveFlash(true); setTimeout(()=>setSaveFlash(false),1500);
@@ -214,6 +215,7 @@ function App() {
       const raw = localStorage.getItem(STORAGE_KEY);
       if(!raw) return;
       const d = JSON.parse(raw);
+      if(d._ver !== STORAGE_VER) { localStorage.removeItem(STORAGE_KEY); return; }
       if(d.hxType) setHxType(d.hxType);
       if(d.mode) setMode(d.mode);
       if(d.airIn) setAirIn(p=>({...p,...d.airIn}));
@@ -287,7 +289,7 @@ function App() {
           const path=[]; let cur=[r,c2]; let lk=hasB?"back":"front";
           path.push([...cur]);visited.add(`${cur[0]},${cur[1]}`);
           while(true){const map=lk==="front"?fm2:bm2;const ck=`${cur[0]},${cur[1]}`;
-            if(!(ck in map))break;const nx=map[ck];const nk=`${nx[0]},${nx[1]}`;
+            if(!map.hasOwnProperty(ck))break;const nx=map[ck];const nk=`${nx[0]},${nx[1]}`;
             if(visited.has(nk))break;
             path.push([...nx]);visited.add(nk);cur=nx;lk=lk==="front"?"back":"front";}
           circs.push(path);
@@ -795,7 +797,7 @@ function App() {
               <Field label="N_seg" unit="/tube" value={ftSpec.N_seg} onChange={v=>uF("N_seg",parseInt(v)||1)}/>
 
               {/* ── Circuit Design ── */}
-              {(()=>{
+              {(()=>{ try {
                 const Nr=ftSpec.Nr, Nt=ftSpec.Nt;
                 const circColors = ["#4ecdc4","#ff6b6b","#45b7d1","#96ceb4","#feca57","#ff9ff3","#54a0ff","#5f27cd"];
                 const isStag = ftSpec.layout==="staggered";
@@ -855,7 +857,7 @@ function App() {
                     while(true){
                       const map=lookFace==="front"?fm:bm;
                       const ck=`${cur[0]},${cur[1]}`;
-                      if(!(ck in map)) break;
+                      if(!map.hasOwnProperty(ck)) break;
                       const next=map[ck];
                       const nk=`${next[0]},${next[1]}`;
                       if(visited.has(nk)) break;
@@ -1037,6 +1039,7 @@ function App() {
                     </div>
                   </div>
                 );
+              } catch(e) { console.error("Circuit editor error:", e); return <div style={{color:"red",fontSize:10,padding:8}}>Circuit error: {String(e.message||e)}</div>; }
               })()} 
 
             </InputGroup>
@@ -1546,7 +1549,18 @@ function App() {
 }
 
 try {
-  ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  class EB extends React.Component {
+    constructor(p){super(p);this.state={err:null};}
+    static getDerivedStateFromError(e){return{err:e};}
+    componentDidCatch(e,info){console.error("React Error:",e,info);}
+    render(){
+      if(this.state.err) return React.createElement("div",{style:{color:"red",padding:20,fontFamily:"monospace",whiteSpace:"pre-wrap",fontSize:11}},
+        "REACT ERROR: "+this.state.err.message+"\n\n"+this.state.err.stack+
+        "\n\nTry: localStorage.removeItem('hxsim_defaults') then reload");
+      return this.props.children;
+    }
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(<EB><App/></EB>);
 } catch(e) {
   document.getElementById("root").innerHTML = 
     '<div style="color:red;padding:20px;font-family:monospace;white-space:pre-wrap;font-size:12px">' +
