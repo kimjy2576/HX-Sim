@@ -559,7 +559,7 @@ function App() {
               {airCorr.mode==="auto"&&result&&result.correlation_recommendation&&(()=>{
                 const rec = result.correlation_recommendation;
                 const usedCorr = (result.correlations_used||{}).air_j;
-                const usedInfo = rec.(ranked||[]).find(r=>r.id===usedCorr);
+                const usedInfo = (rec.ranked||[]).find(r=>r.id===usedCorr);
                 const clr = (usedInfo||{}).status==="error"?C.err:(usedInfo||{}).status==="warning"?C.warn:C.success;
                 return (
                   <div style={{fontSize:10,padding:"6px 8px",marginBottom:8,borderRadius:6,
@@ -641,7 +641,7 @@ function App() {
               {fCorr.mode==="auto"&&result&&result.f_recommendation&&(()=>{
                 const fRec = result.f_recommendation;
                 const usedF = (result.correlations_used||{}).air_f;
-                const fInfo = fRec.(ranked||[]).find(r=>r.id===usedF);
+                const fInfo = (fRec.ranked||[]).find(r=>r.id===usedF);
                 return usedF?(
                   <div style={{fontSize:10,padding:"6px 8px",marginBottom:8,borderRadius:6,
                     background:`${C.success}11`,border:`1px solid ${C.success}33`}}>
@@ -1040,6 +1040,21 @@ function App() {
               })()} 
 
             </InputGroup>
+          ):(
+            <InputGroup label="📐 MCHX Geometry">
+              <Field label="W" unit="m" value={mchxSpec.W} onChange={v=>uM("W",v)}/>
+              <Field label="H" unit="m" value={mchxSpec.H} onChange={v=>uM("H",v)}/>
+              <Field label="ch_w" unit="mm" value={mchxSpec.ch_width*1000} onChange={v=>uM("ch_width",v/1000)}/>
+              <Field label="ch_h" unit="mm" value={mchxSpec.ch_height*1000} onChange={v=>uM("ch_height",v/1000)}/>
+              <Field label="n_ports" value={mchxSpec.n_ports} onChange={v=>uM("n_ports",parseInt(v)||1)}/>
+              <Field label="N_tubes" value={mchxSpec.N_tubes} onChange={v=>uM("N_tubes",parseInt(v)||1)}/>
+              <Field label="Lp" unit="mm" value={mchxSpec.louver_pitch*1000} onChange={v=>uM("louver_pitch",v/1000)}/>
+              <Field label="θ" unit="°" value={mchxSpec.louver_angle} onChange={v=>uM("louver_angle",v)}/>
+              <Field label="Fp" unit="mm" value={mchxSpec.fin_pitch*1000} onChange={v=>uM("fin_pitch",v/1000)}/>
+              <Field label="Fl" unit="mm" value={mchxSpec.fin_height*1000} onChange={v=>uM("fin_height",v/1000)}/>
+              <Field label="n_slabs" value={mchxSpec.n_slabs} onChange={v=>uM("n_slabs",parseInt(v)||1)}/>
+              <Field label="N_seg" unit="/tube" value={mchxSpec.N_seg} onChange={v=>uM("N_seg",parseInt(v)||1)}/>
+            </InputGroup>
           )}
 
           <button onClick={run} disabled={loading} style={{
@@ -1164,7 +1179,7 @@ function App() {
                     const rec = result.correlation_recommendation;
                     if(!rec) return null;
                     const usedCorr = (result.correlations_used||{}).air_j;
-                    const info = rec.(ranked||[]).find(r=>r.id===usedCorr);
+                    const info = (rec.ranked||[]).find(r=>r.id===usedCorr);
                     const clr = (info||{}).status==="error"?C.err:(info||{}).status==="warning"?C.warn:C.success;
                     const isAuto = airCorr.mode==="auto";
                     return (
@@ -1194,7 +1209,7 @@ function App() {
                     const fRec = result.f_recommendation;
                     if(!fRec) return null;
                     const usedF = (result.correlations_used||{}).air_f;
-                    const fInfo = fRec.(ranked||[]).find(r=>r.id===usedF);
+                    const fInfo = (fRec.ranked||[]).find(r=>r.id===usedF);
                     const fVal = (result.correlations_used||{}).f_value;
                     const isAutoF = fCorr.mode==="auto";
                     return usedF?(
