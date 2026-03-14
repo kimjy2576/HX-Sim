@@ -32,7 +32,7 @@ const DEFAULT_FT = {
   wavy_amplitude:0.001,wavy_wavelength:0.01,
   louver_pitch:0.0017,louver_angle:27,
   slit_height:0.001,slit_width:0.007,n_slits:4,
-  N_seg:10,circuit_mode:"custom",inlet:null,outlet:null
+  N_seg:10,circuit_mode:"custom",inlets:[],outlets:[]
 };
 const DEFAULT_MCHX = {
   W:0.6,H:0.4,D:0.02,Nr:1,ch_width:0.001,ch_height:0.0015,
@@ -216,9 +216,9 @@ function App() {
   // flow_arrangement derived from inlet/outlet position
   const getFlow=()=>{
     if(hxType==="FT"){
-      const inl=ftSpec.inlet, outl=ftSpec.outlet;
-      if(inl) return inl[0]>=ftSpec.Nr/2?"counter":"parallel";
-      if(outl) return outl[0]<ftSpec.Nr/2?"counter":"parallel";
+      const inls=ftSpec.inlets||[], outls=ftSpec.outlets||[];
+      if(inls.length>0) return inls[0][0]>=ftSpec.Nr/2?"counter":"parallel";
+      if(outls.length>0) return outls[0][0]<ftSpec.Nr/2?"counter":"parallel";
       return "counter";
     }
     const ip=mchxSpec.inlet_pos||"bottom";
@@ -250,7 +250,7 @@ function App() {
 
   // ── Save / Load defaults via localStorage ──
   const STORAGE_KEY = "hxsim_defaults";
-  const STORAGE_VER = 7; // increment to invalidate old saves
+  const STORAGE_VER = 8; // increment to invalidate old saves
   const [saveFlash,setSaveFlash]=useState(false);
   const collectState = ()=>({_ver:STORAGE_VER,hxType,mode,airIn,refIn,solverCfg,corrFact,ftSpec,mchxSpec,airCorr,fCorr,refCorr,dpRefCorr});
   const saveDefaults = ()=>{
@@ -354,8 +354,8 @@ function App() {
           if(!cnt&&ci[0][0]>ci[ci.length-1][0])ci.reverse();});
         spec.circuits=circs;
         delete spec.bends;
-        delete spec.inlet;
-        delete spec.outlet;
+        delete spec.inlets;
+        delete spec.outlets;
         body.ft_spec=spec;
       } else {
         const ms={...mchxSpec};
@@ -412,13 +412,13 @@ function App() {
     const Nr2=rows.length;
     const Ns2=Math.max(...allT0.map(s=>s.seg))+1;
     const cnt=getFlow()==="counter";
-    const inl=hxType==="FT"?ftSpec.inlet:null;
-    const outl=hxType==="FT"?ftSpec.outlet:null;
+    const inls=hxType==="FT"?(ftSpec.inlets||[]):[];
+    const outls=hxType==="FT"?(ftSpec.outlets||[]):[];
     let rowOrder;
-    if(inl){
-      rowOrder=inl[0]>=Nr2/2?[...rows].reverse():rows;
-    } else if(outl){
-      rowOrder=outl[0]<Nr2/2?[...rows].reverse():rows;
+    if(inls.length>0){
+      rowOrder=inls[0][0]>=Nr2/2?[...rows].reverse():rows;
+    } else if(outls.length>0){
+      rowOrder=outls[0][0]<Nr2/2?[...rows].reverse():rows;
     } else {
       rowOrder=cnt?[...rows].reverse():rows;
     }
@@ -1022,29 +1022,27 @@ function App() {
                 };
 
                 const circuits = traceBends(bends);
-                // Orient path using inlet/outlet settings
-                const inlet=ftSpec.inlet;
-                const outlet=ftSpec.outlet;
+                // Orient each circuit using inlets/outlets arrays
+                const inlets=ftSpec.inlets||[], outlets=ftSpec.outlets||[];
+                const isMatch=(a,b)=>a&&b&&a[0]===b[0]&&a[1]===b[1];
+                const inSet=(arr,t)=>arr.some(a=>isMatch(a,t));
                 circuits.forEach(circ=>{
                   if(circ.length<2) return;
                   const first=circ[0], last=circ[circ.length-1];
-                  if(inlet){
-                    if(last[0]===inlet[0]&&last[1]===inlet[1]) circ.reverse();
-                  } else if(outlet){
-                    if(first[0]===outlet[0]&&first[1]===outlet[1]) circ.reverse();
-                  } else {
-                    // Default: inlet at high row (counter)
+                  if(inSet(inlets,last)) circ.reverse();
+                  else if(inSet(outlets,first)) circ.reverse();
+                  else if(!inSet(inlets,first)&&!inSet(outlets,last)){
+                    // Default: inlet at high row
                     if(first[0]<last[0]) circ.reverse();
                   }
                 });
                 const nc = circuits.length;
 
-                // Inlet/outlet: use user-set values, fall back to circuit endpoints
-                const inletTube=ftSpec.inlet||(circuits.length>0?circuits[0][0]:null);
-                const outletTube=ftSpec.outlet||(circuits.length>0?circuits[0][circuits[0].length-1]:null);
+                // Per-circuit inlet/outlet (first/last of each oriented path)
+                const circInlets=circuits.map(c=>c[0]);
+                const circOutlets=circuits.map(c=>c[c.length-1]);
 
                 // Determine which FACE each endpoint belongs to
-                // An endpoint's free face (no bend) = where the header connects
                 const getEndpointFace=(tube)=>{
                   if(!tube) return null;
                   const k=`${tube[0]},${tube[1]}`;
@@ -1054,11 +1052,16 @@ function App() {
                     `${r1},${c1}`===k||`${r2},${c2}`===k);
                   if(hasFront&&!hasBack) return "back";
                   if(hasBack&&!hasFront) return "front";
-                  if(!hasFront&&!hasBack) return "front"; // isolated → default front
-                  return null; // both connected (middle tube, shouldn't happen for endpoint)
+                  return "front";
                 };
-                const inletFace=getEndpointFace(inletTube);
-                const outletFace=getEndpointFace(outletTube);
+
+                // Build sets for quick lookup
+                const allInlets=new Set([...inlets,...circInlets].map(t=>t[0]+","+t[1]));
+                const allOutlets=new Set([...outlets,...circOutlets].map(t=>t[0]+","+t[1]));
+                // inlet face map
+                const inletFaces={}, outletFaces={};
+                allInlets.forEach(k=>{const [r,c]=k.split(",").map(Number);inletFaces[k]=getEndpointFace([r,c]);});
+                allOutlets.forEach(k=>{const [r,c]=k.split(",").map(Number);outletFaces[k]=getEndpointFace([r,c]);});
 
                 // Cell map
                 const cellMap=Array.from({length:Nr},()=>Array.from({length:Nt},()=>null));
@@ -1073,12 +1076,18 @@ function App() {
                 // ── Bend click handler ──
                 const onFaceTubeClick=(r,c)=>{
                   if(circEditMode==="inlet"){
-                    uF("inlet",[r,c]);
+                    const arr=[...(ftSpec.inlets||[])];
+                    const idx=arr.findIndex(a=>a[0]===r&&a[1]===c);
+                    if(idx>=0) arr.splice(idx,1); else arr.push([r,c]);
+                    uF("inlets",arr);
                     setCircEditMode("bend");
                     return;
                   }
                   if(circEditMode==="outlet"){
-                    uF("outlet",[r,c]);
+                    const arr=[...(ftSpec.outlets||[])];
+                    const idx=arr.findIndex(a=>a[0]===r&&a[1]===c);
+                    if(idx>=0) arr.splice(idx,1); else arr.push([r,c]);
+                    uF("outlets",arr);
                     setCircEditMode("bend");
                     return;
                   }
@@ -1168,10 +1177,9 @@ function App() {
                           const info=cellMap[r][c];
                           const clr=info?circColors[info.circ%circColors.length]:C.surface;
                           const isFirst=bendFirst&&bendFirst.r===r&&bendFirst.c===c;
-                          const isInlet=inletTube&&inletTube[0]===r&&inletTube[1]===c;
-                          const isOutlet=outletTube&&outletTube[0]===r&&outletTube[1]===c;
-                          const showIn=isInlet&&(inletFace===face||(!inletFace));
-                          const showOut=isOutlet&&(outletFace===face||(!outletFace));
+                          const tk=r+","+c;
+                          const isInlet=allInlets.has(tk)&&(inletFaces[tk]===face||!(bends.front||[]).length&&!(bends.back||[]).length);
+                          const isOutlet=allOutlets.has(tk)&&(outletFaces[tk]===face||!(bends.front||[]).length&&!(bends.back||[]).length);
                           const picking=circEditMode==="inlet"||circEditMode==="outlet";
                           const pickClr=circEditMode==="inlet"?C.err:C.success;
                           return (
@@ -1180,15 +1188,15 @@ function App() {
                               {picking&&<circle cx={x} cy={y} r={13}
                                 fill="none" stroke={pickClr} strokeWidth={1} strokeDasharray="2,2" opacity={0.4}/>}
                               <circle cx={x} cy={y} r={10}
-                                fill={isFirst?"#fff":showIn?C.err:showOut?C.success:info?clr:C.surface}
-                                stroke={isFirst?C.accent:showIn?C.err:showOut?C.success:info?clr:C.border}
-                                strokeWidth={isFirst?2.5:(showIn||showOut)?2.5:1}
-                                opacity={(showIn||showOut)?1:info?0.9:0.4}/>
+                                fill={isFirst?"#fff":isInlet?C.err:isOutlet?C.success:info?clr:C.surface}
+                                stroke={isFirst?C.accent:isInlet?C.err:isOutlet?C.success:info?clr:C.border}
+                                strokeWidth={isFirst?2.5:(isInlet||isOutlet)?2.5:1}
+                                opacity={(isInlet||isOutlet)?1:info?0.9:0.4}/>
                               <text x={x} y={y+3} textAnchor="middle"
-                                style={{fontSize:showIn||showOut?6:7,
-                                  fill:isFirst?C.bg:(showIn||showOut)?"#fff":info?"#fff":C.dim,
+                                style={{fontSize:isInlet||isOutlet?6:7,
+                                  fill:isFirst?C.bg:(isInlet||isOutlet)?"#fff":info?"#fff":C.dim,
                                   fontWeight:700,pointerEvents:"none"}}>
-                                {showIn?"IN":showOut?"OUT":info?info.order+1:""}
+                                {isInlet?"IN":isOutlet?"OUT":info?info.order+1:""}
                               </text>
                             </g>
                           );
@@ -1222,26 +1230,47 @@ function App() {
                     {/* Inlet/Outlet controls */}
                     {(
                       <div style={{marginBottom:6,padding:"6px 10px",borderRadius:6,background:C.bg,border:`1px solid ${C.border}`}}>
-                        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                        {/* Per-circuit IN/OUT list */}
+                        {circuits.map((circ,ci)=>{
+                          const clr=circColors[ci%circColors.length];
+                          const inT=circ[0], outT=circ[circ.length-1];
+                          return (
+                            <div key={ci} style={{display:"flex",alignItems:"center",gap:4,marginBottom:ci<nc-1?3:0}}>
+                              <span style={{width:8,height:8,borderRadius:"50%",background:clr,display:"inline-block",flexShrink:0}}/>
+                              <span style={{fontSize:8,color:C.dim,minWidth:20}}>C{ci+1}</span>
+                              <span style={{fontSize:8,padding:"1px 5px",borderRadius:3,background:C.err,color:"#fff",fontWeight:700}}>
+                                IN R{inT[0]}C{inT[1]}
+                              </span>
+                              <span style={{fontSize:8,color:C.dim}}>→</span>
+                              <span style={{fontSize:8,padding:"1px 5px",borderRadius:3,background:C.success,color:"#fff",fontWeight:700}}>
+                                OUT R{outT[0]}C{outT[1]}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {nc===0&&inlets.length===0&&outlets.length===0&&(
+                          <div style={{fontSize:8,color:C.dim}}>회로 없음 — 밴드를 추가하거나 IN/OUT을 먼저 설정하세요</div>
+                        )}
+                        {/* Add IN / Add OUT buttons */}
+                        <div style={{display:"flex",gap:4,marginTop:nc>0?6:0}}>
                           <button onClick={()=>{setCircEditMode(circEditMode==="inlet"?"bend":"inlet");setBendFirst(null);}}
-                            style={{padding:"4px 10px",borderRadius:5,border:"none",cursor:"pointer",
+                            style={{padding:"3px 10px",borderRadius:5,border:"none",cursor:"pointer",
                               fontSize:9,fontWeight:700,fontFamily:"inherit",
                               background:circEditMode==="inlet"?C.err:C.err+"22",
                               color:circEditMode==="inlet"?"#fff":C.err}}>
-                            {circEditMode==="inlet"?"📍 IN 선택중...":"📍 IN"} {inletTube?"R"+inletTube[0]+"C"+inletTube[1]:"?"}
+                            {circEditMode==="inlet"?"📍 IN 선택중...":"📍 IN 추가/제거"}
                           </button>
-                          <span style={{fontSize:10,color:C.dim}}>→</span>
                           <button onClick={()=>{setCircEditMode(circEditMode==="outlet"?"bend":"outlet");setBendFirst(null);}}
-                            style={{padding:"4px 10px",borderRadius:5,border:"none",cursor:"pointer",
+                            style={{padding:"3px 10px",borderRadius:5,border:"none",cursor:"pointer",
                               fontSize:9,fontWeight:700,fontFamily:"inherit",
                               background:circEditMode==="outlet"?C.success:C.success+"22",
                               color:circEditMode==="outlet"?"#fff":C.success}}>
-                            {circEditMode==="outlet"?"📍 OUT 선택중...":"📍 OUT"} {outletTube?"R"+outletTube[0]+"C"+outletTube[1]:"?"}
+                            {circEditMode==="outlet"?"📍 OUT 선택중...":"📍 OUT 추가/제거"}
                           </button>
                         </div>
                         {(circEditMode==="inlet"||circEditMode==="outlet")&&(
                           <div style={{fontSize:8,color:circEditMode==="inlet"?C.err:C.success,fontWeight:600,marginTop:3}}>
-                            튜브를 클릭하면 {circEditMode==="inlet"?"입구(IN)":"출구(OUT)"}로 설정됩니다
+                            튜브 클릭 = {circEditMode==="inlet"?"IN":"OUT"} 추가/제거 (토글)
                           </div>
                         )}
                       </div>
@@ -1272,8 +1301,8 @@ function App() {
 
                     <div style={{fontSize:8,color:C.dim,marginTop:3}}>
                       {(circEditMode==="inlet"||circEditMode==="outlet")
-                        ?"📍 튜브를 클릭하여 "+(circEditMode==="inlet"?"입구(IN)":"출구(OUT)")+" 설정"
-                        :"클릭: 밴드 추가/제거 · IN/OUT 버튼으로 포트 위치 지정"}
+                        ?"📍 튜브 클릭 = "+(circEditMode==="inlet"?"IN":"OUT")+" 추가/제거 (토글)"
+                        :"밴드: 튜브 2개 클릭 · IN/OUT: 버튼 클릭 후 튜브 선택"}
                     </div>
                   </div>
                 );
