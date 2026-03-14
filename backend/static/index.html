@@ -32,13 +32,13 @@ const DEFAULT_FT = {
   wavy_amplitude:0.001,wavy_wavelength:0.01,
   louver_pitch:0.0017,louver_angle:27,
   slit_height:0.001,slit_width:0.007,n_slits:4,
-  N_seg:10,circuit_mode:"custom"
+  N_seg:10,circuit_mode:"custom",inlet:null
 };
 const DEFAULT_MCHX = {
   W:0.6,H:0.4,D:0.02,Nr:1,ch_width:0.001,ch_height:0.0015,
   ch_wall:0.0003,n_ports:12,tube_height:0.002,tube_pitch:0.01,
   louver_pitch:0.0013,louver_angle:27,fin_pitch:0.0014,fin_thickness:0.0001,
-  fin_height:0.008,k_fin:200,N_seg:5,Nt:40
+  fin_height:0.008,k_fin:200,N_seg:5,Nt:40,inlet_pos:"bottom"
 };
 const REFRIGERANTS = ["R410A","R134a","R32","R290","R1234yf","R22","R407C","R404A","R513A","R454C"];
 
@@ -212,8 +212,17 @@ function App() {
   const [mode,setMode]=useState("cond");
   const [airIn,setAirIn]=useState({T:35,RH:0.98,flowMode:"CMM",V:2.0,CMM:2.6});
   const [refIn,setRefIn]=useState({fluid:"R290",stateMode:"P",T_sat:null,P_sat:2811,m_ref:16.5,massUnit:"kg/hr",twoPhase:false,x_in:0.2,T_ref_in:92.6});
-  const [flow,setFlow]=useState("counter");
   const [solverCfg,setSolverCfg]=useState({max_outer:30,tol_pct:0.1});
+  // flow_arrangement derived from inlet position
+  const getFlow=()=>{
+    if(hxType==="FT"){
+      const inl=ftSpec.inlet;
+      if(inl) return inl[0]>=ftSpec.Nr/2?"counter":"parallel";
+      return "counter";
+    }
+    const ip=mchxSpec.inlet_pos||"bottom";
+    return ip==="bottom"?"counter":"parallel";
+  };
   const [corrFact,setCorrFact]=useState({cf_j:1.0,cf_f:1.0,cf_hi:1.0,cf_dp_ref:1.0});
   const [ftSpec,setFtSpec]=useState({...DEFAULT_FT});
   const [mchxSpec,setMchxSpec]=useState({...DEFAULT_MCHX});
@@ -239,9 +248,9 @@ function App() {
 
   // ── Save / Load defaults via localStorage ──
   const STORAGE_KEY = "hxsim_defaults";
-  const STORAGE_VER = 4; // increment to invalidate old saves
+  const STORAGE_VER = 5; // increment to invalidate old saves
   const [saveFlash,setSaveFlash]=useState(false);
-  const collectState = ()=>({_ver:STORAGE_VER,hxType,mode,airIn,refIn,flow,solverCfg,corrFact,ftSpec,mchxSpec,airCorr,fCorr,refCorr,dpRefCorr});
+  const collectState = ()=>({_ver:STORAGE_VER,hxType,mode,airIn,refIn,solverCfg,corrFact,ftSpec,mchxSpec,airCorr,fCorr,refCorr,dpRefCorr});
   const saveDefaults = ()=>{
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(collectState())); }catch(e){}
     setSaveFlash(true); setTimeout(()=>setSaveFlash(false),1500);
@@ -251,7 +260,7 @@ function App() {
     setHxType("FT"); setMode("cond");
     setAirIn({T:35,RH:0.98,flowMode:"CMM",V:2.0,CMM:2.6});
     setRefIn({fluid:"R290",stateMode:"P",T_sat:null,P_sat:2811,m_ref:16.5,massUnit:"kg/hr",twoPhase:false,x_in:0.2,T_ref_in:92.6});
-    setFlow("counter"); setSolverCfg({max_outer:30,tol_pct:0.1});
+    setSolverCfg({max_outer:30,tol_pct:0.1});
     setCorrFact({cf_j:1.0,cf_f:1.0,cf_hi:1.0,cf_dp_ref:1.0});
     setFtSpec({...DEFAULT_FT}); setMchxSpec({...DEFAULT_MCHX});
     setAirCorr({mode:"auto",selected:null}); setFCorr({mode:"auto",selected:null});
@@ -268,7 +277,6 @@ function App() {
       if(d.mode) setMode(d.mode);
       if(d.airIn) setAirIn(p=>({...p,...d.airIn}));
       if(d.refIn) setRefIn(p=>({...p,...d.refIn}));
-      if(d.flow) setFlow(d.flow);
       if(d.solverCfg) setSolverCfg(p=>({...p,...d.solverCfg}));
       if(d.corrFact) setCorrFact(p=>({...p,...d.corrFact}));
       if(d.ftSpec) setFtSpec(p=>({...p,...d.ftSpec}));
@@ -290,7 +298,7 @@ function App() {
     try {
       const body={hx_type:hxType,mode,T_air_in_C:airIn.T,RH_in:airIn.RH,
         air_flow_mode:airIn.flowMode,
-        fluid:refIn.fluid,m_ref:refIn.massUnit==="kg/hr"?refIn.m_ref/3600:refIn.m_ref,flow_arrangement:flow,
+        fluid:refIn.fluid,m_ref:refIn.massUnit==="kg/hr"?refIn.m_ref/3600:refIn.m_ref,flow_arrangement:getFlow(),
         two_phase_inlet:refIn.twoPhase,x_in:refIn.x_in};
       if(airIn.flowMode==="velocity") body.V_air=airIn.V; else body.CMM=airIn.CMM||18;
       if(airCorr.mode==="manual"&&airCorr.selected) body.air_j_corr=airCorr.selected;
@@ -303,7 +311,7 @@ function App() {
       if(hxType==="FT"){
         const spec={...ftSpec};
         // Generate default row-by-row serpentine bends if none set
-        const cnt=flow==="counter";
+        const cnt=getFlow()==="counter";
         if(!spec.bends||(!(spec.bends.front||[]).length&&!(spec.bends.back||[]).length)){
           const front=[],back=[];
           let atF2=true;
@@ -377,7 +385,7 @@ function App() {
       if(!res.ok){const e=await res.json();throw new Error(e.detail||"Failed");}
       setResult(await res.json());setTab("overview");
     }catch(e){setError(e.message);}finally{setLoading(false);}
-  },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr,fCorr,refCorr,solverCfg,dpRefCorr,corrFact]);
+  },[hxType,mode,airIn,refIn,ftSpec,mchxSpec,airCorr,fCorr,refCorr,solverCfg,dpRefCorr,corrFact]);
 
   const segData=(result&&result.segments||[]).filter(s=>s.tube===0).map(s=>({
     name:`R${s.row}S${s.seg}`,Q:s.Q,T_wall:s.T_wall,T_ref:s.T_ref,T_air:s.T_air_local,
@@ -399,9 +407,17 @@ function App() {
     const rows=[...new Set(allT0.map(s=>s.row))].sort((a,b)=>a-b);
     const Nr2=rows.length;
     const Ns2=Math.max(...allT0.map(s=>s.seg))+1;
-    const cnt=flow==="counter";
-    // Row order: counter starts from last row
-    const rowOrder=cnt?[...rows].reverse():rows;
+    const cnt=getFlow()==="counter";
+    const inl=hxType==="FT"?ftSpec.inlet:null;
+    // Row order: use inlet info if available, else counter convention
+    let rowOrder;
+    if(inl){
+      const inlRow=inl[0];
+      const startHigh=inlRow>=Nr2/2;
+      rowOrder=startHigh?[...rows].reverse():rows;
+    } else {
+      rowOrder=cnt?[...rows].reverse():rows;
+    }
     // Build path: alternate seg direction per pass (U-bend)
     const path=[];
     rowOrder.forEach((r,ri)=>{
@@ -478,9 +494,7 @@ function App() {
                   {m==="evap"?"❄️ Evaporator":"🔥 Condenser"}</button>
               ))}
             </div>
-            <div style={{marginTop:8}}>
-              <Field label="Flow" options={["counter","parallel"]} value={flow} onChange={setFlow}/>
-            </div>
+
             <div style={{display:"flex",gap:6,marginTop:6,alignItems:"center"}}>
               <span style={{fontSize:11,color:C.dim,whiteSpace:"nowrap"}}>Max Iter</span>
               <input type="number" value={solverCfg.max_outer} step={5} min={5} max={100}
@@ -922,7 +936,7 @@ function App() {
                 const Nr=ftSpec.Nr, Nt=ftSpec.Nt;
                 const circColors = ["#4ecdc4","#ff6b6b","#45b7d1","#96ceb4","#feca57","#ff9ff3","#54a0ff","#5f27cd"];
                 const isStag = ftSpec.layout==="staggered";
-                const counter = flow==="counter";
+                const counter = getFlow()==="counter";
 
                 // ── Generate default single-serpentine bends (row-by-row) ──
                 // Counter: inlet at R_last(air outlet), outlet at R0(air inlet)
@@ -1004,14 +1018,38 @@ function App() {
                 };
 
                 const circuits = traceBends(bends);
-                // Correct path direction: counter→inlet at high row, parallel→inlet at low row
+                // Orient path: if inlet is set, ensure path starts from inlet
+                const inlet=ftSpec.inlet; // [row,col] or null
                 circuits.forEach(circ=>{
                   if(circ.length<2) return;
-                  const firstR=circ[0][0], lastR=circ[circ.length-1][0];
-                  if(counter && firstR<lastR) circ.reverse();
-                  if(!counter && firstR>lastR) circ.reverse();
+                  if(inlet){
+                    // If inlet matches last element, reverse
+                    const last=circ[circ.length-1];
+                    if(last[0]===inlet[0]&&last[1]===inlet[1]) circ.reverse();
+                  } else {
+                    // Default: inlet at high row (counter convention)
+                    const firstR=circ[0][0], lastR=circ[circ.length-1][0];
+                    if(firstR<lastR) circ.reverse();
+                  }
                 });
                 const nc = circuits.length;
+
+                // Inlet/outlet of first circuit
+                const inletTube=circuits.length>0?circuits[0][0]:null;
+                const outletTube=circuits.length>0?circuits[0][circuits[0].length-1]:null;
+
+                // Set inlet handler: click endpoint to toggle
+                const onSetInlet=(r,c)=>{
+                  // Check if this tube is an endpoint of any circuit
+                  for(const circ of circuits){
+                    if(circ.length<2) continue;
+                    const first=circ[0], last=circ[circ.length-1];
+                    if((first[0]===r&&first[1]===c)||(last[0]===r&&last[1]===c)){
+                      uF("inlet",[r,c]);
+                      return;
+                    }
+                  }
+                };
 
                 // Cell map
                 const cellMap=Array.from({length:Nr},()=>Array.from({length:Nt},()=>null));
@@ -1111,17 +1149,20 @@ function App() {
                           const info=cellMap[r][c];
                           const clr=info?circColors[info.circ%circColors.length]:C.surface;
                           const isFirst=bendFirst&&bendFirst.r===r&&bendFirst.c===c;
+                          const isInlet=inletTube&&inletTube[0]===r&&inletTube[1]===c;
+                          const isOutlet=outletTube&&outletTube[0]===r&&outletTube[1]===c;
                           return (
                             <g key={`t${r}-${c}`} onClick={()=>onFaceTubeClick(r,c)}
+                              onDoubleClick={(e)=>{e.preventDefault();onSetInlet(r,c);}}
                               style={{cursor:"pointer"}}>
                               <circle cx={x} cy={y} r={10}
-                                fill={isFirst?"#fff":info?clr:C.surface}
-                                stroke={isFirst?C.accent:info?clr:C.border}
-                                strokeWidth={isFirst?2.5:1} opacity={info?0.9:0.4}/>
+                                fill={isFirst?"#fff":isInlet?C.err:isOutlet?C.success:info?clr:C.surface}
+                                stroke={isFirst?C.accent:isInlet?C.err:isOutlet?C.success:info?clr:C.border}
+                                strokeWidth={isFirst?2.5:(isInlet||isOutlet)?2.5:1} opacity={info?0.9:0.4}/>
                               <text x={x} y={y+3} textAnchor="middle"
-                                style={{fontSize:7,fill:isFirst?C.bg:info?"#fff":C.dim,
+                                style={{fontSize:isInlet||isOutlet?6:7,fill:isFirst?C.bg:(isInlet||isOutlet)?"#fff":info?"#fff":C.dim,
                                   fontWeight:700,pointerEvents:"none"}}>
-                                {info?info.order+1:""}
+                                {isInlet?"IN":isOutlet?"OUT":info?info.order+1:""}
                               </text>
                             </g>
                           );
@@ -1176,7 +1217,7 @@ function App() {
                     </div>
 
                     <div style={{fontSize:8,color:C.dim,marginTop:3}}>
-                      튜브 2개 클릭 = 리턴밴드 추가/제거 · FRONT/BACK 탭으로 면 전환
+                      클릭: 밴드 추가/제거 · 더블클릭: 입구(IN) 지정 · FRONT/BACK 탭 전환
                     </div>
                   </div>
                 );
@@ -1276,6 +1317,23 @@ function App() {
                         fontSize:8,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↩ 리셋</button>
                     </div>
 
+                    {/* Inlet position */}
+                    <div style={{display:"flex",gap:4,marginBottom:4,alignItems:"center"}}>
+                      <span style={{fontSize:8,color:C.dim}}>냉매 입구:</span>
+                      {["bottom","top"].map(p=>{
+                        const ip=mchxSpec.inlet_pos||"bottom";
+                        const active=ip===p;
+                        return (
+                          <button key={p} onClick={()=>uM("inlet_pos",p)}
+                            style={{padding:"2px 8px",borderRadius:4,border:"none",cursor:"pointer",
+                              fontSize:8,fontWeight:700,fontFamily:"inherit",
+                              background:active?C.err:C.bg,color:active?"#fff":C.dim}}>
+                            {p==="bottom"?"▼ 하단(IN)":"▲ 상단(IN)"}
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     {/* Front/Back tab */}
                     <div style={{display:"flex",gap:0,marginBottom:4}}>
                       {["front","back"].map(f=>{
@@ -1320,17 +1378,31 @@ function App() {
                                 fill="none" stroke={C.border} strokeWidth={0.5}/>
 
                               {/* Tubes */}
-                              {Array.from({length:Nt},(_,t)=>{
-                                const ty=tubeYf(t);
-                                return (
-                                  <g key={"t"+t}>
-                                    <rect x={sx} y={ty} width={slabW} height={tH} rx={2}
-                                      fill={tubeColor[s][t]} opacity={0.75}/>
-                                    {s===0&&<text x={sx-2} y={ty+tH/2+3} textAnchor="end"
-                                      style={{fontSize:5,fill:C.dim}}>{t}</text>}
-                                  </g>
-                                );
-                              })}
+                              {(()=>{
+                                const ip=mchxSpec.inlet_pos||"bottom";
+                                const inT=ip==="bottom"?Nt-1:0;
+                                const outT=ip==="bottom"?0:Nt-1;
+                                return Array.from({length:Nt},(_,t)=>{
+                                  const ty=tubeYf(t);
+                                  const isIn=s===0&&t===inT;
+                                  const isOut=s===Nr-1&&t===outT;
+                                  return (
+                                    <g key={"t"+t}>
+                                      <rect x={sx} y={ty} width={slabW} height={tH} rx={2}
+                                        fill={isIn?C.err:isOut?C.success:tubeColor[s][t]}
+                                        opacity={isIn||isOut?1:0.75}
+                                        stroke={isIn?C.err:isOut?C.success:"none"}
+                                        strokeWidth={isIn||isOut?1:0}/>
+                                      {s===0&&<text x={sx-2} y={ty+tH/2+3} textAnchor="end"
+                                        style={{fontSize:5,fill:C.dim}}>{t}</text>}
+                                      {isIn&&<text x={sx+slabW+3} y={ty+tH/2+3}
+                                        style={{fontSize:6,fill:C.err,fontWeight:700}}>IN</text>}
+                                      {isOut&&<text x={sx+slabW+3} y={ty+tH/2+3}
+                                        style={{fontSize:6,fill:C.success,fontWeight:700}}>OUT</text>}
+                                    </g>
+                                  );
+                                });
+                              })()}
 
                               {/* Baffle zones — full width, active face only */}
                               {Array.from({length:Nt-1},(_,i)=>{
