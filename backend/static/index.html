@@ -19,23 +19,7 @@ button:hover{opacity:0.9}
 </style>
 </head>
 <body>
-<div id="root"><div style="color:#888;padding:20px">Loading...</div></div>
-<script>
-window.onerror = function(msg, src, line, col, err) {
-  document.getElementById('root').innerHTML = 
-    '<div style="color:red;padding:20px;font-family:monospace;white-space:pre-wrap;font-size:12px">' +
-    'JS ERROR:\n' + msg + '\nLine: ' + line + ', Col: ' + col +
-    (err ? '\nStack: ' + err.stack : '') + '</div>';
-  return true;
-};
-setTimeout(function(){
-  var root = document.getElementById('root');
-  if(root && root.children.length <= 1 && !root.querySelector('[data-reactroot]')){
-    root.innerHTML += '<div style="color:orange;padding:10px;font-size:11px;font-family:monospace">' +
-      'React did not render after 5s. Check browser console (F12) for Babel/JS errors.</div>';
-  }
-}, 5000);
-</script>
+<div id="root"></div>
 <script type="text/babel">
 const {useState, useCallback, useEffect} = React;
 
