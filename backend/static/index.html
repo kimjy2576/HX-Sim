@@ -401,39 +401,19 @@ function App() {
   const refFlowData=(()=>{
     if(!result||!result.segments) return [];
     const segs=result.segments||[];
-    const allT0=segs.filter(s=>s.tube===0);
-    if(allT0.length===0) return [];
-    // Build segment lookup: (row,seg) → segment
-    const segMap={};
-    allT0.forEach(s=>{segMap[s.row+","+s.seg]=s;});
-    // Determine circuit path order for tube 0
-    // Get unique rows and Nr, Ns
-    const rows=[...new Set(allT0.map(s=>s.row))].sort((a,b)=>a-b);
-    const Nr2=rows.length;
-    const Ns2=Math.max(...allT0.map(s=>s.seg))+1;
-    const cnt=getFlow()==="counter";
-    const inls=hxType==="FT"?(ftSpec.inlets||[]):[];
-    const outls=hxType==="FT"?(ftSpec.outlets||[]):[];
-    let rowOrder;
-    if(inls.length>0){
-      rowOrder=inls[0][0]>=Nr2/2?[...rows].reverse():rows;
-    } else if(outls.length>0){
-      rowOrder=outls[0][0]<Nr2/2?[...rows].reverse():rows;
-    } else {
-      rowOrder=cnt?[...rows].reverse():rows;
+    const paths=result.circuit_paths||[];
+    // Use circuit_paths[0] (first circuit) for ordering
+    if(paths.length>0&&paths[0].length>0){
+      const segMap={};
+      segs.forEach(s=>{segMap[s.tube+","+s.row+","+s.seg]=s;});
+      return paths[0].map((k,i)=>{
+        const s=segMap[k[0]+","+k[1]+","+k[2]];
+        return s?{idx:i,name:"R"+s.row+"S"+s.seg,T_ref:s.T_ref,T_air:s.T_air_local,T_wall:s.T_wall,x:s.x_ref}:null;
+      }).filter(Boolean);
     }
-    // Build path: alternate seg direction per pass (U-bend)
-    const path=[];
-    rowOrder.forEach((r,ri)=>{
-      const segOrder=(ri%2===0)?Array.from({length:Ns2},(_,i)=>i):Array.from({length:Ns2},(_,i)=>Ns2-1-i);
-      segOrder.forEach(seg=>{
-        const s=segMap[r+","+seg];
-        if(s) path.push(s);
-      });
-    });
-    return path.map((s,i)=>({
-      idx:i, name:`R${s.row}S${s.seg}`,
-      T_ref:s.T_ref, T_air:s.T_air_local, T_wall:s.T_wall, x:s.x_ref
+    // Fallback: tube 0 in geometric order
+    return segs.filter(s=>s.tube===0).map((s,i)=>({
+      idx:i,name:"R"+s.row+"S"+s.seg,T_ref:s.T_ref,T_air:s.T_air_local,T_wall:s.T_wall,x:s.x_ref
     }));
   })();
   const airFlowData=(()=>{

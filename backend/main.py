@@ -185,6 +185,7 @@ class SimResponse(BaseModel):
     f_recommendation: Dict = {}
     convergence: Dict = {}
     segments: List[SegmentOut]
+    circuit_paths: List = []  # [[tube,row,seg], ...] per circuit, refrigerant flow order
     error: str = ""
 
 
@@ -456,6 +457,7 @@ def simulate(req: SimRequest):
             correlation_recommendation=rec,
             f_recommendation=f_rec,
             convergence=result.convergence,
+            circuit_paths=result.circuit_paths,
             segments=seg_out,
             error=result.error,
         )

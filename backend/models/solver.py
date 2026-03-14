@@ -111,6 +111,7 @@ class SimulationResult:
     row_Q: List[float] = field(default_factory=list)
     correlations_used: Dict = field(default_factory=dict)
     convergence: Dict = field(default_factory=dict)
+    circuit_paths: List = field(default_factory=list)  # [[tube,row,seg], ...] per circuit
     error: str = ""
 
 
@@ -267,6 +268,7 @@ class HXSolver:
         for outer_iter in range(max_outer):
             seg_dict.clear()
             circ_outlets = []
+            circ_paths = []  # track actual segment order per circuit
 
             # ── Process each circuit ──
             for circ_idx, path in enumerate(circuits):
@@ -275,6 +277,7 @@ class HXSolver:
                 if inp.T_ref_in is not None and (inp.x_in >= 1.0 or inp.x_in <= 0.0):
                     T_ref = inp.T_ref_in
                 dp_circ = 0.0  # accumulate dp for this circuit
+                circ_seg_keys = []
 
                 for pass_idx, (row_idx, col_idx) in enumerate(path):
                     # MCHX multi-pass: override G_ref per pass
@@ -322,6 +325,7 @@ class HXSolver:
                         dp_circ += dp_seg
 
                         seg_dict[(col_idx, row_idx, seg_idx)] = seg_result
+                        circ_seg_keys.append([col_idx, row_idx, seg_idx])
 
                         # Update refrigerant state (per-tube Q, not total pass Q)
                         Q_ref_seg = seg_result.Q / mchx_tpp if mchx_tpp > 1 else seg_result.Q
@@ -347,6 +351,7 @@ class HXSolver:
                                 except: pass
 
                 circ_outlets.append((x_ref, T_ref, dp_circ))
+                circ_paths.append(circ_seg_keys)
 
             # ── Check outer convergence ──
             Q_this = sum(s.Q for s in seg_dict.values())
@@ -472,6 +477,7 @@ class HXSolver:
         result.T_ref_out = T_ref_out_avg
         result.segments = all_segments
         result.row_Q = row_Q
+        result.circuit_paths = circ_paths
         result.correlations_used = self.corr
         result.convergence = {
             "outer_converged": outer_converged,
