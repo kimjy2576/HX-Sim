@@ -254,7 +254,7 @@ function App() {
         const spec={...ftSpec};
         // Generate default single-serpentine bends if none set
         const cnt=flow==="counter";
-        if(!spec.bends||(!spec.bends.front?.length&&!spec.bends.back?.length)){
+        if(!spec.bends||(!(spec.bends.front||[]).length&&!(spec.bends.back||[]).length)){
           const front=[],back=[];
           let atF2=cnt;
           for(let col=0;col<spec.Nt;col++){
@@ -306,10 +306,10 @@ function App() {
     }catch(e){setError(e.message);}finally{setLoading(false);}
   },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr,fCorr,refCorr,solverCfg,dpRefCorr,corrFact]);
 
-  const segData=result?.segments?.filter(s=>s.tube===0)?.map(s=>({
+  const segData=(result&&result.segments||[]).filter(s=>s.tube===0).map(s=>({
     name:`R${s.row}S${s.seg}`,Q:s.Q,T_wall:s.T_wall,h_i:s.h_i,x:s.x_ref,eta_o:s.eta_o,dp_ref:s.dp_ref
   }))||[];
-  const rowData=result?.row_Q?.map((q,i)=>({name:`R${i}`,Q:q}))||[];
+  const rowData=(result&&result.row_Q||[]).map((q,i)=>({name:`R${i}`,Q:q}))||[];
   const mc=mode==="evap"?C.accent:C.accent3;
 
   return (
@@ -413,8 +413,8 @@ function App() {
             {result&&(
               <div style={{fontSize:10,color:C.dim,marginBottom:2,paddingLeft:4}}>
                 → {airIn.flowMode==="velocity" ?
-                  `CMM = ${result.CMM?.toFixed(2)} m³/min` :
-                  `V_face = ${result.V_air?.toFixed(3)} m/s`}
+                  `CMM = ${(result.CMM||0).toFixed(2)} m³/min` :
+                  `V_face = ${(result.V_air||0).toFixed(3)} m/s`}
               </div>
             )}
           </InputGroup>
@@ -439,8 +439,8 @@ function App() {
             {result&&(
               <div style={{fontSize:10,color:C.dim,marginBottom:6,paddingLeft:4}}>
                 → {refIn.stateMode==="T" ?
-                  `P_sat = ${result.P_sat_kPa?.toFixed(1)} kPa` :
-                  `T_sat = ${result.T_sat_C?.toFixed(2)} °C`}
+                  `P_sat = ${(result.P_sat_kPa||0).toFixed(1)} kPa` :
+                  `T_sat = ${(result.T_sat_C||0).toFixed(2)} °C`}
               </div>
             )}
             <div style={{display:"flex",gap:4,marginBottom:4,marginTop:4}}>
@@ -503,13 +503,13 @@ function App() {
               </div>
               {/* Manual mode: ranked correlation list */}
               {airCorr.mode==="manual"&&(()=>{
-                const ranked = result?.correlation_recommendation?.ranked;
+                const ranked = (result&&result.correlation_recommendation||{}).ranked;
                 // Map correlation IDs to fin types to detect stale results
                 const corrFinMap = {wang2000_plain:'plain',gray_webb1986:'plain',kim1999_plain:'plain',kayansayan1993:'plain',
                   wang1999_wavy:'wavy',wang2002_wavy:'wavy',beecher_fagan1987:'wavy',kim1997_wavy:'wavy',jang1996_wavy:'wavy',
                   wang1999_louver:'louver',chang2000_louver:'louver',wang2000_louver:'louver',achaichia_cowell1988:'louver',davenport1983:'louver',
                   wang2001_slit:'slit',manglik_bergles1995:'slit',nakayama_xu1983:'slit',du_wang2000:'slit'};
-                const resultMatchesFin = ranked?.some(r=>corrFinMap[r.id]===ftSpec.fin_type);
+                const resultMatchesFin = (ranked||[]).some(r=>corrFinMap[r.id]===ftSpec.fin_type);
 
                 if(!ranked || ranked.length===0 || !resultMatchesFin) return (
                   <div style={{fontSize:10,color:C.warn,padding:"8px",marginBottom:8,
@@ -556,24 +556,24 @@ function App() {
                 );
               })()}
               {/* Auto mode: show selection reason after simulation */}
-              {airCorr.mode==="auto"&&result?.correlation_recommendation&&(()=>{
+              {airCorr.mode==="auto"&&result&&result.correlation_recommendation&&(()=>{
                 const rec = result.correlation_recommendation;
-                const usedCorr = result.correlations_used?.air_j;
-                const usedInfo = rec.ranked?.find(r=>r.id===usedCorr);
-                const clr = usedInfo?.status==="error"?C.err:usedInfo?.status==="warning"?C.warn:C.success;
+                const usedCorr = (result.correlations_used||{}).air_j;
+                const usedInfo = rec.(ranked||[]).find(r=>r.id===usedCorr);
+                const clr = (usedInfo||{}).status==="error"?C.err:(usedInfo||{}).status==="warning"?C.warn:C.success;
                 return (
                   <div style={{fontSize:10,padding:"6px 8px",marginBottom:8,borderRadius:6,
                     background:`${clr}11`,border:`1px solid ${clr}33`}}>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
                       <span style={{fontWeight:700,color:C.accent}}>⚡ 자동 선택:</span>
-                      <span style={{color:C.text,fontWeight:600}}>{usedInfo?.name||usedCorr}</span>
-                      <span style={{fontSize:9,color:clr}}>({usedInfo?.in_range||"?"})</span>
+                      <span style={{color:C.text,fontWeight:600}}>{(usedInfo||{}).name||usedCorr}</span>
+                      <span style={{fontSize:9,color:clr}}>({(usedInfo||{}).in_range||"?"})</span>
                     </div>
                     <div style={{fontSize:9,color:C.dim,marginBottom:2}}>Re_Dc = {result.Re_Dc}</div>
-                    {rec.reasons?.map((r,i)=>
+                    {(rec.reasons||[]).map((r,i)=>
                       <div key={i} style={{color:C.dim,fontSize:9,marginTop:1}}>• {r}</div>
                     )}
-                    {usedInfo?.warnings?.length>0&&(
+                    {usedInfo&&usedInfo.warnings&&usedInfo.warnings.length>0&&(
                       <div style={{marginTop:4,paddingTop:4,borderTop:`1px solid ${clr}22`}}>
                         {usedInfo.warnings.map((w,i)=>(
                           <div key={i} style={{fontSize:9,color:w.severity==="error"?C.err:C.warn}}>
@@ -601,7 +601,7 @@ function App() {
               </div>
               {/* f-factor Manual mode: ranked list */}
               {fCorr.mode==="manual"&&(()=>{
-                const ranked = result?.f_recommendation?.ranked;
+                const ranked = (result&&result.f_recommendation||{}).ranked;
                 if(!ranked || ranked.length===0) return (
                   <div style={{fontSize:10,color:C.warn,padding:"8px",marginBottom:8,
                     background:`${C.warn}11`,border:`1px solid ${C.warn}33`,borderRadius:6}}>
@@ -638,16 +638,16 @@ function App() {
                 );
               })()}
               {/* f-factor Auto mode: show after simulation */}
-              {fCorr.mode==="auto"&&result?.f_recommendation&&(()=>{
+              {fCorr.mode==="auto"&&result&&result.f_recommendation&&(()=>{
                 const fRec = result.f_recommendation;
-                const usedF = result.correlations_used?.air_f;
-                const fInfo = fRec.ranked?.find(r=>r.id===usedF);
+                const usedF = (result.correlations_used||{}).air_f;
+                const fInfo = fRec.(ranked||[]).find(r=>r.id===usedF);
                 return usedF?(
                   <div style={{fontSize:10,padding:"6px 8px",marginBottom:8,borderRadius:6,
                     background:`${C.success}11`,border:`1px solid ${C.success}33`}}>
                     <span style={{fontWeight:700,color:C.accent}}>⚡ f:</span>{" "}
-                    <span style={{color:C.text,fontWeight:600}}>{fInfo?.name||usedF}</span>
-                    <span style={{fontSize:9,color:C.dim}}> · f={result.correlations_used?.f_value}</span>
+                    <span style={{color:C.text,fontWeight:600}}>{(fInfo||{}).name||usedF}</span>
+                    <span style={{fontSize:9,color:C.dim}}> · f={(result.correlations_used||{}).f_value}</span>
                   </div>
                 ):null;
               })()}
@@ -706,12 +706,12 @@ function App() {
                         })}
                       </div>
                     )}
-                    {cur.mode==="auto"&&result?.correlations_used&&(
+                    {cur.mode==="auto"&&result&&result.correlations_used&&(
                       <div style={{fontSize:10,padding:"4px 8px",borderRadius:5,
                         background:`${C.accent3}11`,border:`1px solid ${C.accent3}33`}}>
                         <span style={{fontWeight:700,color:C.accent3}}>⚡</span>{" "}
                         <span style={{color:C.text,fontWeight:600}}>
-                          {result.correlations_used?.[key]||"auto"}
+                          {(result.correlations_used||{})[key]||"auto"}
                         </span>
                       </div>
                     )}
@@ -760,7 +760,7 @@ function App() {
                         })}
                       </div>
                     )}
-                    {dpRefCorr.mode==="auto"&&result?.correlations_used?.dp_ref&&(
+                    {dpRefCorr.mode==="auto"&&result&&result.correlations_used&&result.correlations_used.dp_ref&&(
                       <div style={{fontSize:10,padding:"4px 8px",borderRadius:5,
                         background:`${C.warn}11`,border:`1px solid ${C.warn}33`}}>
                         <span style={{fontWeight:700,color:C.warn}}>⚡</span>{" "}
@@ -827,7 +827,7 @@ function App() {
                 };
 
                 // Initialize bends if empty
-                const bends = ftSpec.bends && (ftSpec.bends.front?.length>0 || ftSpec.bends.back?.length>0)
+                const bends = ftSpec.bends && ((ftSpec.bends&&ftSpec.bends.front||[]).length>0 || (ftSpec.bends&&ftSpec.bends.back||[]).length>0)
                   ? ftSpec.bends : genDefaultBends(Nr,Nt,counter);
 
                 // ── Trace circuits from front/back bends ──
@@ -951,7 +951,7 @@ function App() {
                       {/* Bend arcs */}
                       {faceBends.map(([r1,c1,r2,c2],bi)=>{
                         const x1=tx(r1,c1),y1=ty(r1,c1),x2=tx(r2,c2),y2=ty(r2,c2);
-                        const info=cellMap[r1]?.[c1];
+                        const info=(cellMap[r1]||[])[c1];
                         const clr=info?circColors[info.circ%circColors.length]:C.accent;
                         const mx=(x1+x2)/2,my=(y1+y2)/2;
                         const dx=x2-x1,dy=y2-y1;
@@ -1133,8 +1133,8 @@ function App() {
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                         <span style={{fontWeight:700,color:clr}}>{ok?"✅ 수렴":"⚠️ 미수렴"}</span>
                         <span style={{color:C.dim}}>
-                          Outer: {cv.outer_iterations}/{cv.outer_max}회 · ΔQ={cv.final_dQ?.toFixed(2)}W ({cv.final_dQ_pct?.toFixed(2)}%)
-                          · ΔT_air={cv.final_dT?.toFixed(3)}K
+                          Outer: {cv.outer_iterations}/{cv.outer_max}회 · ΔQ={(cv.final_dQ||0).toFixed(2)}W ({(cv.final_dQ_pct||0).toFixed(2)}%)
+                          · ΔT_air={(cv.final_dT||0).toFixed(3)}K
                         </span>
                         <span style={{color:C.dim}}>· Seg {cv.seg_converged_pct}% 수렴</span>
                       </div>
@@ -1163,20 +1163,20 @@ function App() {
                   {(()=>{
                     const rec = result.correlation_recommendation;
                     if(!rec) return null;
-                    const usedCorr = result.correlations_used?.air_j;
-                    const info = rec.ranked?.find(r=>r.id===usedCorr);
-                    const clr = info?.status==="error"?C.err:info?.status==="warning"?C.warn:C.success;
+                    const usedCorr = (result.correlations_used||{}).air_j;
+                    const info = rec.(ranked||[]).find(r=>r.id===usedCorr);
+                    const clr = (info||{}).status==="error"?C.err:(info||{}).status==="warning"?C.warn:C.success;
                     const isAuto = airCorr.mode==="auto";
                     return (
                       <div style={{padding:"8px 10px",borderRadius:6,background:`${clr}11`,border:`1px solid ${clr}22`}}>
                         <div style={{fontSize:10,fontWeight:700,color:clr,marginBottom:4}}>
-                          {isAuto?"⚡ 자동 선택":"🔧 수동 선택"}: {info?.name||usedCorr}
-                          <span style={{fontWeight:400,color:C.dim}}> — {info?.in_range||"?"} 항목 유효, Re_Dc={result.Re_Dc}</span>
+                          {isAuto?"⚡ 자동 선택":"🔧 수동 선택"}: {(info||{}).name||usedCorr}
+                          <span style={{fontWeight:400,color:C.dim}}> — {(info||{}).in_range||"?"} 항목 유효, Re_Dc={result.Re_Dc}</span>
                         </div>
-                        {isAuto&&rec.reasons?.map((r,i)=>
+                        {isAuto&&(rec.reasons||[]).map((r,i)=>
                           <div key={i} style={{fontSize:9,color:C.dim,marginTop:1}}>• {r}</div>
                         )}
-                        {!isAuto&&info?.warnings?.length>0&&(
+                        {!isAuto&&info&&info.warnings&&info.warnings.length>0&&(
                           <div style={{marginTop:3}}>
                             {info.warnings.map((w,i)=>
                               <div key={i} style={{fontSize:9,color:w.severity==="error"?C.err:C.warn}}>
@@ -1185,7 +1185,7 @@ function App() {
                             )}
                           </div>
                         )}
-                        {info?.note&&<div style={{fontSize:9,color:C.dim,marginTop:3,fontStyle:"italic"}}>{info.note}</div>}
+                        {info&&info.note&&<div style={{fontSize:9,color:C.dim,marginTop:3,fontStyle:"italic"}}>{info.note}</div>}
                       </div>
                     );
                   })()}
@@ -1193,17 +1193,17 @@ function App() {
                   {(()=>{
                     const fRec = result.f_recommendation;
                     if(!fRec) return null;
-                    const usedF = result.correlations_used?.air_f;
-                    const fInfo = fRec.ranked?.find(r=>r.id===usedF);
-                    const fVal = result.correlations_used?.f_value;
+                    const usedF = (result.correlations_used||{}).air_f;
+                    const fInfo = fRec.(ranked||[]).find(r=>r.id===usedF);
+                    const fVal = (result.correlations_used||{}).f_value;
                     const isAutoF = fCorr.mode==="auto";
                     return usedF?(
                       <div style={{padding:"8px 10px",borderRadius:6,marginTop:6,background:`${C.accent2}11`,border:`1px solid ${C.accent2}22`}}>
                         <div style={{fontSize:10,fontWeight:700,color:C.accent2,marginBottom:2}}>
-                          {isAutoF?"⚡":"🔧"} f-factor: {fInfo?.name||usedF}
+                          {isAutoF?"⚡":"🔧"} f-factor: {(fInfo||{}).name||usedF}
                           <span style={{fontWeight:400,color:C.dim}}> — f = {fVal}</span>
                         </div>
-                        {fInfo?.note&&<div style={{fontSize:9,color:C.dim,fontStyle:"italic"}}>{fInfo.note}</div>}
+                        {fInfo&&fInfo.note&&<div style={{fontSize:9,color:C.dim,fontStyle:"italic"}}>{fInfo.note}</div>}
                       </div>
                     ):null;
                   })()}
@@ -1530,17 +1530,14 @@ function App() {
   );
 }
 
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { error: null }; }
-  static getDerivedStateFromError(error) { return { error: error.toString() }; }
-  componentDidCatch(error, info) { console.error('HX-Sim Error:', error, info); }
-  render() {
-    if (this.state.error) return React.createElement('div', {style:{color:'red',padding:20,fontFamily:'monospace',whiteSpace:'pre-wrap'}},
-      'ERROR: ' + this.state.error);
-    return this.props.children;
-  }
+try {
+  ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+} catch(e) {
+  document.getElementById("root").innerHTML = 
+    '<div style="color:red;padding:20px;font-family:monospace;white-space:pre-wrap;font-size:12px">' +
+    'RENDER ERROR: ' + e.message + '\n' + e.stack + '</div>';
+  console.error("HX-Sim render error:", e);
 }
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(ErrorBoundary, null, React.createElement(App)));
 </script>
 </body>
 </html>
