@@ -188,9 +188,44 @@ class HXSolver:
                 circuits = generate_circuits(
                     self.Nr, self.Nt, spec.circuit_mode, inp.flow_arrangement)
         else:
-            # MCHX: all parallel (each tube is one circuit through all slabs)
-            circuits = generate_circuits(
-                self.Nr, self.Nt, "row_parallel", inp.flow_arrangement)
+            # MCHX: check for multi-pass (baffle) design
+            mspec = inp.mchx_spec
+            if mspec.passes and len(mspec.passes) > 1:
+                # Multi-pass MCHX: create 1 circuit visiting tubes in pass order
+                # Each pass's tubes are "parallel" (same G_ref)
+                # Circuit visits all tubes across all slabs, grouped by pass
+                self._mchx_multipass = True
+                self._pass_info = []  # list of {tubes: [...], G_ref: float}
+                A_cs_port = mspec.ch_width * mspec.ch_height
+                circuit = []
+                for pi, pass_tubes in enumerate(mspec.passes):
+                    tpp = len(pass_tubes)
+                    m_per_tube = inp.m_ref / tpp
+                    m_per_port = m_per_tube / mspec.n_ports
+                    G_pass = m_per_port / A_cs_port if A_cs_port > 0 else 100
+                    self._pass_info.append({"tubes": pass_tubes, "tpp": tpp, "G": G_pass, "m_tube": m_per_tube})
+                    # Direction alternates per pass
+                    slab_range = range(self.Nr) if pi % 2 == 0 else range(self.Nr - 1, -1, -1)
+                    for slab in slab_range:
+                        if pi % 2 == 0:
+                            for t in pass_tubes:
+                                circuit.append([slab, t])
+                        else:
+                            for t in reversed(pass_tubes):
+                                circuit.append([slab, t])
+                circuits = [circuit]
+                # Build pass lookup: for each (row, tube) → pass index
+                self._tube_pass_map = {}
+                for pi, pass_tubes in enumerate(mspec.passes):
+                    for t in pass_tubes:
+                        for s in range(self.Nr):
+                            self._tube_pass_map[(s, t)] = pi
+            else:
+                # Default: all parallel (each tube is one circuit through all slabs)
+                self._mchx_multipass = False
+                self._pass_info = None
+                circuits = generate_circuits(
+                    self.Nr, self.Nt, "row_parallel", inp.flow_arrangement)
 
         n_circ = len(circuits)
 
@@ -201,8 +236,11 @@ class HXSolver:
             G_ref = m_ref_circ / A_cs_ref if A_cs_ref > 0 else 100
         else:
             A_cs_port = inp.mchx_spec.ch_width * inp.mchx_spec.ch_height
-            m_per_port = m_ref_circ / inp.mchx_spec.n_ports
-            G_ref = m_per_port / A_cs_port if A_cs_port > 0 else 100
+            if getattr(self, '_mchx_multipass', False):
+                G_ref = self._pass_info[0]["G"]  # initial, overridden per-tube
+            else:
+                m_per_port = m_ref_circ / inp.mchx_spec.n_ports
+                G_ref = m_per_port / A_cs_port if A_cs_port > 0 else 100
 
         # Air mass flux & h_o
         G_air = m_air / self.geo.A_c if self.geo.A_c > 0 else 5.0
@@ -247,6 +285,17 @@ class HXSolver:
                 dp_circ = 0.0  # accumulate dp for this circuit
 
                 for pass_idx, (row_idx, col_idx) in enumerate(path):
+                    # MCHX multi-pass: override G_ref per tube's pass
+                    G_ref_local = G_ref
+                    m_ref_local = m_ref_circ
+                    tpp = 1
+                    if getattr(self, '_mchx_multipass', False) and self._pass_info:
+                        pi = self._tube_pass_map.get((row_idx, col_idx), 0)
+                        pinfo = self._pass_info[pi]
+                        G_ref_local = pinfo["G"]
+                        m_ref_local = pinfo["m_tube"]
+                        tpp = 1  # each tube computed individually, no scaling needed
+
                     # Alternate segment direction per tube pass (U-bend)
                     if pass_idx % 2 == 0:
                         seg_order = range(Ns)
@@ -261,14 +310,14 @@ class HXSolver:
                             row=row_idx, tube=col_idx, seg=seg_idx,
                             T_air=T_air_local, W_air=W_air_local, T_dp=T_dp,
                             x_ref=x_ref, T_ref=T_ref,
-                            P_sat=P_sat, G_ref=G_ref, G_air=G_air,
-                            h_o=h_o, m_ref_tube=m_ref_circ,
+                            P_sat=P_sat, G_ref=G_ref_local, G_air=G_air,
+                            h_o=h_o, m_ref_tube=m_ref_local,
                         )
 
                         # Refrigerant pressure drop for this segment
                         try:
                             dp_seg = compute_dp_ref_seg(
-                                dp_corr_id, x_ref, G_ref, self.Di, L_seg,
+                                dp_corr_id, x_ref, G_ref_local, self.Di, L_seg,
                                 ref, P_sat, Dh=self.Di) * inp.cf_dp_ref
                         except:
                             dp_seg = 0.0
@@ -279,8 +328,8 @@ class HXSolver:
 
                         # Update refrigerant state
                         if 0 <= x_ref <= 1:
-                            if h_fg > 0 and m_ref_circ > 0:
-                                dx = seg_result.Q / (m_ref_circ * h_fg)
+                            if h_fg > 0 and m_ref_local > 0:
+                                dx = seg_result.Q / (m_ref_local * h_fg)
                                 if inp.mode == "evap":
                                     x_ref += dx
                                 else:
@@ -289,14 +338,14 @@ class HXSolver:
                             if x_ref > 1:
                                 try:
                                     cp_v = ref.cp_v(P_sat)
-                                    if m_ref_circ > 0:
-                                        T_ref += seg_result.Q / (m_ref_circ * cp_v)
+                                    if m_ref_local > 0:
+                                        T_ref += seg_result.Q / (m_ref_local * cp_v)
                                 except: pass
                             elif x_ref < 0:
                                 try:
                                     cp_l = ref.cp_l(P_sat)
-                                    if m_ref_circ > 0:
-                                        T_ref -= seg_result.Q / (m_ref_circ * cp_l)
+                                    if m_ref_local > 0:
+                                        T_ref -= seg_result.Q / (m_ref_local * cp_l)
                                 except: pass
 
                 circ_outlets.append((x_ref, T_ref, dp_circ))

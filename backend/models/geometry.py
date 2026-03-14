@@ -302,6 +302,9 @@ class MCHXSpec:
     N_seg: int = 5
     N_tubes: int = 40  # total tubes in height direction
 
+    # Multi-pass (from baffle design)
+    passes: list = field(default_factory=list)  # [[tube_indices], ...] per pass, empty = all parallel
+
 
 @dataclass
 class MCHXGeo:

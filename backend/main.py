@@ -92,6 +92,7 @@ class MCHXSpecInput(BaseModel):
     k_fin: float = 200.0
     N_seg: int = 5
     N_tubes: int = 40
+    passes: Optional[List[List[int]]] = None  # baffle passes: [[tube_indices], ...]
 
 
 class SimRequest(BaseModel):
@@ -300,6 +301,7 @@ def simulate(req: SimRequest):
                 fin_pitch=m_in.fin_pitch, fin_thickness=m_in.fin_thickness,
                 fin_height=m_in.fin_height, k_fin=m_in.k_fin,
                 N_seg=m_in.N_seg, N_tubes=m_in.N_tubes,
+                passes=m_in.passes or [],
             )
 
         # --- Resolve V_air ↔ CMM ---

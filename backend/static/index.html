@@ -281,7 +281,21 @@ function App() {
         spec.circuits=circs;
         delete spec.bends;
         body.ft_spec=spec;
-      } else body.mchx_spec=mchxSpec;
+      } else {
+        const ms={...mchxSpec};
+        // Convert baffles → passes
+        const baf=ms.baffles||{front:[],back:[]};
+        const allB=[...(baf.front||[]),...(baf.back||[])].sort((a,b)=>a-b);
+        const uniq=[...new Set(allB)];
+        if(uniq.length>0){
+          const passes=[];let st=0;
+          for(const b of uniq){if(b>=st&&b<ms.N_tubes-1){passes.push(Array.from({length:b+1-st},(_,i)=>st+i));st=b+1;}}
+          passes.push(Array.from({length:ms.N_tubes-st},(_,i)=>st+i));
+          ms.passes=passes;
+        }
+        delete ms.baffles;
+        body.mchx_spec=ms;
+      }
       body.max_outer=solverCfg.max_outer;
       body.outer_tol_pct=solverCfg.tol_pct;
       body.cf_j=corrFact.cf_j; body.cf_f=corrFact.cf_f;
@@ -1061,6 +1075,142 @@ function App() {
               <Field label="Fl" unit="mm" value={mchxSpec.fin_height*1000} onChange={v=>uM("fin_height",v/1000)}/>
               <Field label="n_slabs" value={mchxSpec.n_slabs} onChange={v=>uM("n_slabs",parseInt(v)||1)}/>
               <Field label="N_seg" unit="/tube" value={mchxSpec.N_seg} onChange={v=>uM("N_seg",parseInt(v)||1)}/>
+
+              {/* ── MCHX Baffle Circuit Design ── */}
+              {(()=>{ try {
+                const Nt=mchxSpec.N_tubes;
+                const baf=mchxSpec.baffles||{front:[],back:[]};
+                const circColors=["#4ecdc4","#ff6b6b","#45b7d1","#96ceb4","#feca57","#ff9ff3","#54a0ff","#5f27cd"];
+
+                // Compute passes from baffles
+                const allBaf=[...(baf.front||[]),...(baf.back||[])].sort((a,b)=>a-b);
+                const unique=[...new Set(allBaf)];
+                const passes=[];
+                let start=0;
+                for(const b of unique){
+                  if(b>=start && b<Nt-1){ passes.push(Array.from({length:b+1-start},(_,i)=>start+i)); start=b+1; }
+                }
+                passes.push(Array.from({length:Nt-start},(_,i)=>start+i));
+                const np=passes.length;
+
+                // Tube → pass map
+                const tubePass={};
+                passes.forEach((p,pi)=>p.forEach(t=>{tubePass[t]=pi;}));
+
+                // Click handler
+                const onBafClick=(pos)=>{
+                  const face=bendFace;
+                  const arr=[...(baf[face]||[])];
+                  const idx=arr.indexOf(pos);
+                  if(idx>=0) arr.splice(idx,1); else arr.push(pos);
+                  arr.sort((a,b)=>a-b);
+                  uM("baffles",{...baf,[face]:arr});
+                };
+                const resetBaffles=()=>uM("baffles",{front:[],back:[]});
+
+                // SVG
+                const tH=14, gap=8, oY=20, oX=30;
+                const svgW=120, svgH=oY+Nt*tH+(Nt-1)*gap+10;
+
+                const renderManifold=(face)=>{
+                  const isFront=face==="front";
+                  const isActive=bendFace===face;
+                  const faceBaf=baf[face]||[];
+                  return (
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:9,fontWeight:700,textAlign:"center",marginBottom:2,
+                        color:isActive?C.accent:C.dim,cursor:"pointer",
+                        padding:"2px 0",borderRadius:4,background:isActive?C.accent+"15":"transparent"}}
+                        onClick={()=>{setBendFace(face);setBendFirst(null);}}>
+                        {isFront?"▶ FRONT":"◀ BACK"}{isActive?" ✏️":""}
+                      </div>
+                      <svg width={svgW} height={svgH} style={{display:"block",
+                        border:isActive?"1.5px solid "+C.accent:"1px solid "+C.border+"22",
+                        borderRadius:6,cursor:isActive?"pointer":"default"}}>
+                        {/* Tubes */}
+                        {Array.from({length:Nt},(_,t)=>{
+                          const y=oY+t*(tH+gap);
+                          const pi=tubePass[t]||0;
+                          const clr=circColors[pi%circColors.length];
+                          return (
+                            <g key={t}>
+                              <rect x={oX} y={y} width={svgW-oX-10} height={tH} rx={3}
+                                fill={clr} opacity={0.7} stroke={clr} strokeWidth={0.5}/>
+                              <text x={oX-4} y={y+tH/2+3} textAnchor="end"
+                                style={{fontSize:7,fill:C.dim}}>{t}</text>
+                              <text x={svgW/2+10} y={y+tH/2+3} textAnchor="middle"
+                                style={{fontSize:7,fill:"#fff",fontWeight:600}}>P{pi+1}</text>
+                            </g>
+                          );
+                        })}
+                        {/* Baffle clickable zones (between tubes) */}
+                        {Array.from({length:Nt-1},(_,i)=>{
+                          const y1=oY+i*(tH+gap)+tH;
+                          const y2=oY+(i+1)*(tH+gap);
+                          const yMid=(y1+y2)/2;
+                          const hasBaf=faceBaf.includes(i);
+                          return (
+                            <g key={"b"+i} onClick={()=>onBafClick(i)}
+                              style={{cursor:isActive?"pointer":"default"}}>
+                              <rect x={oX-5} y={y1} width={svgW-oX} height={y2-y1}
+                                fill="transparent"/>
+                              {hasBaf?(
+                                <line x1={oX-5} y1={yMid} x2={svgW-10} y2={yMid}
+                                  stroke={C.warn} strokeWidth={2.5} strokeDasharray="4,2"/>
+                              ):(
+                                isActive&&<line x1={oX+5} y1={yMid} x2={svgW-15} y2={yMid}
+                                  stroke={C.border} strokeWidth={0.5} strokeDasharray="2,4"/>
+                              )}
+                            </g>
+                          );
+                        })}
+                        {/* Pass count label */}
+                        <text x={svgW/2} y={12} textAnchor="middle"
+                          style={{fontSize:8,fill:C.dim,fontWeight:700}}>{np}패스</text>
+                      </svg>
+                    </div>
+                  );
+                };
+
+                return (
+                  <div style={{borderLeft:"2px solid "+C.accent,paddingLeft:10,marginBottom:6,marginTop:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                      <span style={{fontSize:9,color:C.accent,fontWeight:700}}>MANIFOLD BAFFLE</span>
+                      <span style={{fontSize:9,color:np>1?C.warn:C.success,fontWeight:600}}>
+                        {np}패스 ({passes.map(p=>p.length).join("+")}튜브)
+                      </span>
+                    </div>
+                    <div style={{display:"flex",gap:4,marginBottom:4}}>
+                      <button onClick={resetBaffles} style={{padding:"3px 8px",borderRadius:4,
+                        border:"1px solid "+C.accent,background:"transparent",color:C.accent,
+                        fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↩ 1패스(기본)</button>
+                    </div>
+                    <div style={{display:"flex",gap:0,marginBottom:4}}>
+                      {["front","back"].map(f=>(
+                        <button key={f} onClick={()=>{setBendFace(f);setBendFirst(null);}}
+                          style={{flex:1,padding:"5px 0",border:"none",cursor:"pointer",
+                            fontSize:10,fontWeight:700,fontFamily:"inherit",
+                            borderBottom:bendFace===f?"2px solid "+C.accent:"1px solid "+C.border,
+                            background:bendFace===f?C.accent+"15":C.bg,
+                            color:bendFace===f?C.accent:C.dim,
+                            borderRadius:bendFace===f?"6px 6px 0 0":"0"}}>
+                          {f==="front"?"▶ FRONT":"◀ BACK"}
+                          <span style={{fontSize:8,marginLeft:4,opacity:0.6}}>
+                            ({(baf[f]||[]).length}배플)
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{border:"1px solid "+C.accent+"33",borderRadius:"0 0 6px 6px",padding:4,background:C.bg+"88"}}>
+                      {renderManifold(bendFace)}
+                    </div>
+                    <div style={{fontSize:8,color:C.dim,marginTop:3}}>
+                      튜브 사이 클릭 = 배플 추가/제거 · FRONT/BACK 탭으로 매니폴드 전환
+                    </div>
+                  </div>
+                );
+              } catch(e) { console.error("MCHX baffle error:",e); return <div style={{color:"red",fontSize:10,padding:8}}>Baffle error: {String(e.message||e)}</div>; }
+              })()}
             </InputGroup>
           )}
 
