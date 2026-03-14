@@ -19,7 +19,23 @@ button:hover{opacity:0.9}
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><div style="color:#888;padding:20px">Loading...</div></div>
+<script>
+window.onerror = function(msg, src, line, col, err) {
+  document.getElementById('root').innerHTML = 
+    '<div style="color:red;padding:20px;font-family:monospace;white-space:pre-wrap;font-size:12px">' +
+    'JS ERROR:\n' + msg + '\nLine: ' + line + ', Col: ' + col +
+    (err ? '\nStack: ' + err.stack : '') + '</div>';
+  return true;
+};
+setTimeout(function(){
+  var root = document.getElementById('root');
+  if(root && root.children.length <= 1 && !root.querySelector('[data-reactroot]')){
+    root.innerHTML += '<div style="color:orange;padding:10px;font-size:11px;font-family:monospace">' +
+      'React did not render after 5s. Check browser console (F12) for Babel/JS errors.</div>';
+  }
+}, 5000);
+</script>
 <script type="text/babel">
 const {useState, useCallback, useEffect} = React;
 
@@ -265,7 +281,7 @@ function App() {
         for(let c2=0;c2<spec.Nt;c2++) for(let r=0;r<spec.Nr;r++){
           const k=`${r},${c2}`;
           if(visited.has(k)) continue;
-          const hasF=k in fm2,hasB=k in bm2;
+          const hasF=fm2.hasOwnProperty(k),hasB=bm2.hasOwnProperty(k);
           if(hasF&&hasB) continue;
           if(!hasF&&!hasB){circs.push([[r,c2]]);visited.add(k);continue;}
           const path=[]; let cur=[r,c2]; let lk=hasB?"back":"front";
@@ -827,7 +843,7 @@ function App() {
                   for(let c=0;c<Nt;c++) for(let r=0;r<Nr;r++){
                     const k=`${r},${c}`;
                     if(visited.has(k)) continue;
-                    const hasF=k in fm, hasB=k in bm;
+                    const hasF=fm.hasOwnProperty(k), hasB=bm.hasOwnProperty(k);
                     if(hasF&&hasB) continue;
                     if(!hasF&&!hasB){
                       // Isolated tube = its own single-tube circuit
@@ -1514,7 +1530,17 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error: error.toString() }; }
+  componentDidCatch(error, info) { console.error('HX-Sim Error:', error, info); }
+  render() {
+    if (this.state.error) return React.createElement('div', {style:{color:'red',padding:20,fontFamily:'monospace',whiteSpace:'pre-wrap'}},
+      'ERROR: ' + this.state.error);
+    return this.props.children;
+  }
+}
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(ErrorBoundary, null, React.createElement(App)));
 </script>
 </body>
 </html>
