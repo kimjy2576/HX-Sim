@@ -881,15 +881,17 @@ function App() {
 
                 // ── SVG layout ──
                 const cW=28,cH=28,oX=22,oY=18;
-                const svgW=Nt*cW+oX+(isStag?cW/2:0)+10;
-                const svgH=Nr*cH+oY+10;
-                const tubeX=(r,c)=>oX+c*cW+cW/2+(isStag&&r%2===1?cW/2:0);
-                const tubeY=(r)=>oY+r*cH+cH/2;
-                const tubeBX=(r,c)=>oX+(Nt-1-c)*cW+cW/2+(isStag&&r%2===1?-cW/2:0);
+                const svgW=Nr*cW+oX+10;
+                const svgH=Nt*cH+oY+(isStag?cH/2:0)+10;
+                const tubeX=(r,c)=>oX+r*cW+cW/2;
+                const tubeY=(r,c)=>oY+c*cH+cH/2+(isStag&&r%2===1?cH/2:0);
+                const tubeBX=(r,c)=>oX+(Nr-1-r)*cW+cW/2;
+                const tubeBY=(r,c)=>oY+c*cH+cH/2+(isStag&&r%2===1?cH/2:0);
 
                 const renderFace=(face)=>{
                   const isFront=face==="front";
                   const tx=isFront?tubeX:tubeBX;
+                  const ty=isFront?tubeY:tubeBY;
                   const faceBends=bends[face]||[];
                   const isActive=bendFace===face&&isCustom;
                   return (
@@ -904,13 +906,13 @@ function App() {
                         border:isActive?`1.5px solid ${C.accent}`:`1px solid ${C.border}22`,
                         borderRadius:6,cursor:isActive?"crosshair":"default"}}>
                         {Array.from({length:Nr},(_,r)=>(
-                          <text key={`rl${r}`} x={4} y={tubeY(r)+3} style={{fontSize:7,fill:C.dim}}>R{r}</text>
+                          <text key={`rl${r}`} x={tubeX(r,0)} y={oY-4} textAnchor="middle" style={{fontSize:7,fill:C.dim}}>R{r}</text>
                         ))}
                         {Array.from({length:Nt},(_,c)=>(
-                          <text key={`cl${c}`} x={tx(0,c)} y={oY-4} textAnchor="middle" style={{fontSize:7,fill:C.dim}}>C{c}</text>
+                          <text key={`cl${c}`} x={4} y={tubeY(0,c)+3} style={{fontSize:7,fill:C.dim}}>C{c}</text>
                         ))}
                         {faceBends.map(([r1,c1,r2,c2],bi)=>{
-                          const x1=tx(r1,c1),y1=tubeY(r1),x2=tx(r2,c2),y2=tubeY(r2);
+                          const x1=tx(r1,c1),y1=isFront?tubeY(r1,c1):tubeBY(r1,c1),x2=tx(r2,c2),y2=isFront?tubeY(r2,c2):tubeBY(r2,c2);
                           const info=cellMap[r1]?.[c1];
                           const clr=info?circColors[info.circ%circColors.length]:C.accent;
                           const mx=(x1+x2)/2,my=(y1+y2)/2;
@@ -922,7 +924,7 @@ function App() {
                         })}
                         {Array.from({length:Nr},(_,r)=>
                           Array.from({length:Nt},(_,c)=>{
-                            const x=tx(r,c),y=tubeY(r);
+                            const x=tx(r,c),y=isFront?tubeY(r,c):tubeBY(r,c);
                             const info=cellMap[r][c];
                             const clr=info?circColors[info.circ%circColors.length]:C.surface;
                             const isFirst=bendFirst&&bendFirst.r===r&&bendFirst.c===c&&bendFace===face;
@@ -986,20 +988,20 @@ function App() {
                         <svg width={svgW} height={svgH} style={{display:"block"}}>
                           <defs><marker id="arrCE3" markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto">
                             <polygon points="0 0, 5 2, 0 4" fill={C.accent}/></marker></defs>
-                          <line x1={3} y1={10} x2={3} y2={Nr*cH+oY} stroke={C.accent} strokeWidth={1.5} markerEnd="url(#arrCE3)"/>
-                          <text x={3} y={7} textAnchor="middle" style={{fontSize:7,fill:C.accent,fontWeight:700}}>AIR</text>
-                          {Array.from({length:Nt},(_,c)=>(
-                            <text key={`cl${c}`} x={tubeX(0,c)} y={oY-4} textAnchor="middle" style={{fontSize:7,fill:C.dim}}>C{c}</text>
-                          ))}
+                          <line x1={oX-2} y1={svgH-4} x2={svgW-10} y2={svgH-4} stroke={C.accent} strokeWidth={1.5} markerEnd="url(#arrCE3)"/>
+                          <text x={svgW/2} y={svgH+4} textAnchor="middle" style={{fontSize:7,fill:C.accent,fontWeight:700}}>AIR →</text>
                           {Array.from({length:Nr},(_,r)=>(
-                            <text key={`rl${r}`} x={4} y={tubeY(r)+3} style={{fontSize:7,fill:C.dim}}>R{r}</text>
+                            <text key={`rl${r}`} x={tubeX(r,0)} y={oY-4} textAnchor="middle" style={{fontSize:7,fill:C.dim}}>R{r}</text>
+                          ))}
+                          {Array.from({length:Nt},(_,c)=>(
+                            <text key={`cl${c}`} x={4} y={tubeY(0,c)+3} style={{fontSize:7,fill:C.dim}}>C{c}</text>
                           ))}
                           {circuits.map((circ,ci)=>{
                             const clr=circColors[ci%circColors.length];
                             return circ.slice(0,-1).map(([r1,c1],idx)=>{
                               const [r2,c2]=circ[idx+1];
                               return <line key={`f${ci}-${idx}`}
-                                x1={tubeX(r1,c1)} y1={tubeY(r1)} x2={tubeX(r2,c2)} y2={tubeY(r2)}
+                                x1={tubeX(r1,c1)} y1={tubeY(r1,c1)} x2={tubeX(r2,c2)} y2={tubeY(r2,c2)}
                                 stroke={clr} strokeWidth={c1!==c2?2:1} strokeDasharray={c1!==c2?"4,2":"none"} opacity={0.5}/>;
                             });
                           })}
@@ -1009,9 +1011,9 @@ function App() {
                               const clr=info?circColors[info.circ%circColors.length]:C.surface;
                               return (
                                 <g key={`t${r}-${c}`}>
-                                  <circle cx={tubeX(r,c)} cy={tubeY(r)} r={10}
+                                  <circle cx={tubeX(r,c)} cy={tubeY(r,c)} r={10}
                                     fill={info?clr:C.surface} stroke={C.border} strokeWidth={0.5} opacity={info?0.9:0.4}/>
-                                  <text x={tubeX(r,c)} y={tubeY(r)+3} textAnchor="middle"
+                                  <text x={tubeX(r,c)} y={tubeY(r,c)+3} textAnchor="middle"
                                     style={{fontSize:7,fill:info?"#fff":C.dim,fontWeight:700,pointerEvents:"none"}}>
                                     {info?info.order+1:""}</text>
                                 </g>);
