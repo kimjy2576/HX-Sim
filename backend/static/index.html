@@ -285,7 +285,7 @@ function App() {
       } else {
         const ms={...mchxSpec};
         const slabBaf=ms.slab_baffles||Array.from({length:ms.Nr},()=>({front:[],back:[]}));
-        const slabConn=ms.slab_conn||Array.from({length:Math.max(ms.Nr-1,0)},()=>({face:"front",pos:"bottom"}));
+        const slabConn=(ms.slab_conn||[]).map(c=>typeof c==="string"?{face:"front",pos:c}:(c&&c.pos?c:{face:"front",pos:"bottom"}));while(slabConn.length<Math.max(ms.Nr-1,0))slabConn.push({face:"front",pos:"bottom"});
         const getBP=(b)=>{
           const all=[...((b||{}).front||[]),...((b||{}).back||[])].sort((a,c)=>a-c);
           const u=[...new Set(all)];const p=[];let st=0;
@@ -296,7 +296,7 @@ function App() {
         const passSlab=[];
         for(let s=0;s<ms.Nr;s++){
           let sp=getBP(slabBaf[s]);
-          const conn=s>0?slabConn[s-1]:{};
+          const conn=s>0?(slabConn[s-1]||{face:"front",pos:"bottom"}):{face:"front",pos:"bottom"};
           if(conn.pos==="top") sp=[...sp].reverse();
           sp.forEach(p=>{allPasses.push(p);passSlab.push(s);});
         }
@@ -1093,7 +1093,7 @@ function App() {
 
                 const slabBaf=mchxSpec.slab_baffles||Array.from({length:Nr},()=>({front:[],back:[]}));
                 // slab_conn: [{face:"front"|"back", pos:"top"|"bottom"}, ...]
-                const slabConn=mchxSpec.slab_conn||Array.from({length:Math.max(Nr-1,0)},()=>({face:"front",pos:"bottom"}));
+                const slabConn=(mchxSpec.slab_conn||[]).map(c=>typeof c==="string"?{face:"front",pos:c}:(c&&c.pos?c:{face:"front",pos:"bottom"}));while(slabConn.length<Math.max(Nr-1,0))slabConn.push({face:"front",pos:"bottom"});
 
                 const getBP=(b)=>{
                   const all=[...((b||{}).front||[]),...((b||{}).back||[])].sort((a,c)=>a-c);
@@ -1109,7 +1109,7 @@ function App() {
                 let gpi=0;
                 for(let s=0;s<Nr;s++){
                   const sp=slabPasses[s];
-                  const conn=s>0?slabConn[s-1]:{};
+                  const conn=s>0?(slabConn[s-1]||{face:"front",pos:"bottom"}):{face:"front",pos:"bottom"};
                   const rev=(conn.pos==="top");
                   const order=rev?[...sp].reverse():sp;
                   order.forEach(pass=>{
