@@ -151,6 +151,7 @@ function App() {
   const [refIn,setRefIn]=useState({fluid:"R290",stateMode:"P",T_sat:null,P_sat:2811,m_ref:16.5,massUnit:"kg/hr",twoPhase:false,x_in:0.2,T_ref_in:92.6});
   const [flow,setFlow]=useState("counter");
   const [solverCfg,setSolverCfg]=useState({max_outer:30,tol_pct:0.1});
+  const [corrFact,setCorrFact]=useState({cf_j:1.0,cf_f:1.0,cf_hi:1.0,cf_dp_ref:1.0});
   const [ftSpec,setFtSpec]=useState({...DEFAULT_FT});
   const [mchxSpec,setMchxSpec]=useState({...DEFAULT_MCHX});
   const [airCorr,setAirCorr]=useState({mode:"auto",selected:null});
@@ -173,7 +174,7 @@ function App() {
   // ── Save / Load defaults via localStorage ──
   const STORAGE_KEY = "hxsim_defaults";
   const [saveFlash,setSaveFlash]=useState(false);
-  const collectState = ()=>({hxType,mode,airIn,refIn,flow,solverCfg,ftSpec,mchxSpec,airCorr,fCorr,refCorr,dpRefCorr});
+  const collectState = ()=>({hxType,mode,airIn,refIn,flow,solverCfg,corrFact,ftSpec,mchxSpec,airCorr,fCorr,refCorr,dpRefCorr});
   const saveDefaults = ()=>{
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(collectState())); }catch(e){}
     setSaveFlash(true); setTimeout(()=>setSaveFlash(false),1500);
@@ -184,6 +185,7 @@ function App() {
     setAirIn({T:35,RH:0.98,flowMode:"CMM",V:2.0,CMM:2.6});
     setRefIn({fluid:"R290",stateMode:"P",T_sat:null,P_sat:2811,m_ref:16.5,massUnit:"kg/hr",twoPhase:false,x_in:0.2,T_ref_in:92.6});
     setFlow("counter"); setSolverCfg({max_outer:30,tol_pct:0.1});
+    setCorrFact({cf_j:1.0,cf_f:1.0,cf_hi:1.0,cf_dp_ref:1.0});
     setFtSpec({...DEFAULT_FT}); setMchxSpec({...DEFAULT_MCHX});
     setAirCorr({mode:"auto",selected:null}); setFCorr({mode:"auto",selected:null});
     setRefCorr({evap:{mode:"auto",selected:null},cond:{mode:"auto",selected:null}});
@@ -200,6 +202,7 @@ function App() {
       if(d.refIn) setRefIn(p=>({...p,...d.refIn}));
       if(d.flow) setFlow(d.flow);
       if(d.solverCfg) setSolverCfg(p=>({...p,...d.solverCfg}));
+      if(d.corrFact) setCorrFact(p=>({...p,...d.corrFact}));
       if(d.ftSpec) setFtSpec(p=>({...p,...d.ftSpec}));
       if(d.mchxSpec) setMchxSpec(p=>({...p,...d.mchxSpec}));
       if(d.airCorr) setAirCorr(p=>({...p,...d.airCorr}));
@@ -232,11 +235,13 @@ function App() {
       if(hxType==="FT") body.ft_spec=ftSpec; else body.mchx_spec=mchxSpec;
       body.max_outer=solverCfg.max_outer;
       body.outer_tol_pct=solverCfg.tol_pct;
+      body.cf_j=corrFact.cf_j; body.cf_f=corrFact.cf_f;
+      body.cf_hi=corrFact.cf_hi; body.cf_dp_ref=corrFact.cf_dp_ref;
       const res=await fetch(`${API_URL}/simulate`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       if(!res.ok){const e=await res.json();throw new Error(e.detail||"Failed");}
       setResult(await res.json());setTab("overview");
     }catch(e){setError(e.message);}finally{setLoading(false);}
-  },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr,fCorr,refCorr,solverCfg,dpRefCorr]);
+  },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr,fCorr,refCorr,solverCfg,dpRefCorr,corrFact]);
 
   const segData=result?.segments?.filter(s=>s.tube===0)?.map(s=>({
     name:`R${s.row}S${s.seg}`,Q:s.Q,T_wall:s.T_wall,h_i:s.h_i,x:s.x_ref,eta_o:s.eta_o,dp_ref:s.dp_ref
@@ -299,6 +304,29 @@ function App() {
               <input type="number" value={solverCfg.tol_pct} step={0.05} min={0.01} max={5}
                 onChange={e=>setSolverCfg(p=>({...p,tol_pct:parseFloat(e.target.value)||0.1}))}
                 style={{background:C.bg,color:C.text,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 6px",fontSize:13,width:50,textAlign:"right"}}/>
+            </div>
+            {/* Correction Factors */}
+            <div style={{marginTop:8,borderTop:`1px solid ${C.border}`,paddingTop:8}}>
+              <div style={{fontSize:9,color:C.warn,fontWeight:700,marginBottom:6,letterSpacing:0.5}}>CORRECTION FACTORS</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 10px"}}>
+                {[
+                  {k:"cf_j",  l:"Air j",   tip:"공기측 h_o"},
+                  {k:"cf_f",  l:"Air f",   tip:"공기측 ΔP"},
+                  {k:"cf_hi", l:"Ref h_i",  tip:"냉매측 h_i"},
+                  {k:"cf_dp_ref",l:"Ref ΔP",tip:"냉매측 ΔP"},
+                ].map(({k,l,tip})=>(
+                  <div key={k} style={{display:"flex",alignItems:"center",gap:4}}>
+                    <span style={{fontSize:10,color:C.dim,minWidth:42}} title={tip}>{l}</span>
+                    <input type="number" value={corrFact[k]} step={0.05} min={0.1} max={5}
+                      onChange={e=>setCorrFact(p=>({...p,[k]:parseFloat(e.target.value)||1.0}))}
+                      style={{background:corrFact[k]!==1.0?`${C.warn}15`:C.bg,
+                        color:corrFact[k]!==1.0?C.warn:C.text,
+                        border:`1px solid ${corrFact[k]!==1.0?C.warn:C.border}`,
+                        borderRadius:5,padding:"3px 5px",fontSize:12,width:48,textAlign:"right",
+                        fontWeight:corrFact[k]!==1.0?700:400}}/>
+                  </div>
+                ))}
+              </div>
             </div>
           </InputGroup>
 

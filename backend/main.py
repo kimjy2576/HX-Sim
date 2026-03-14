@@ -130,6 +130,12 @@ class SimRequest(BaseModel):
     cond_corr: Optional[str] = Field(None, description="Condensation correlation ID. None = auto.")
     dp_ref_corr: Optional[str] = Field(None, description="Refrigerant dp correlation ID. None = auto.")
 
+    # Correction factors
+    cf_j: float = Field(1.0, description="Air-side j-factor correction multiplier")
+    cf_f: float = Field(1.0, description="Air-side f-factor correction multiplier")
+    cf_hi: float = Field(1.0, description="Refrigerant-side HTC correction multiplier")
+    cf_dp_ref: float = Field(1.0, description="Refrigerant-side dp correction multiplier")
+
     # Geometry
     ft_spec: Optional[FTSpecInput] = None
     mchx_spec: Optional[MCHXSpecInput] = None
@@ -334,6 +340,10 @@ def simulate(req: SimRequest):
             flow_arrangement=req.flow_arrangement,
             max_outer=req.max_outer,
             outer_tol_pct=req.outer_tol_pct,
+            cf_j=req.cf_j,
+            cf_f=req.cf_f,
+            cf_hi=req.cf_hi,
+            cf_dp_ref=req.cf_dp_ref,
             ft_spec=ft,
             mchx_spec=mchx,
         )

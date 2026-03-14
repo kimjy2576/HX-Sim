@@ -64,6 +64,12 @@ class SimulationInput:
     outer_tol_pct: float = 0.1 # [%] relative Q convergence
     outer_tol_T: float = 0.1   # [K] T_air_out convergence
 
+    # Correction factors (multipliers, default 1.0)
+    cf_j: float = 1.0         # air-side j-factor
+    cf_f: float = 1.0         # air-side f-factor (friction)
+    cf_hi: float = 1.0        # refrigerant-side HTC
+    cf_dp_ref: float = 1.0    # refrigerant-side pressure drop
+
 
 @dataclass
 class SegmentResult:
@@ -200,7 +206,7 @@ class HXSolver:
 
         # Air mass flux & h_o
         G_air = m_air / self.geo.A_c if self.geo.A_c > 0 else 5.0
-        h_o = self._compute_h_o(G_air, inp.T_air_in)
+        h_o = self._compute_h_o(G_air, inp.T_air_in) * inp.cf_j
         h_fg = ref.h_fg(P_sat)
         L_seg = self.geo.L_seg if hasattr(self.geo, 'L_seg') and self.geo.L_seg > 0 else 0.05
 
@@ -263,7 +269,7 @@ class HXSolver:
                         try:
                             dp_seg = compute_dp_ref_seg(
                                 dp_corr_id, x_ref, G_ref, self.Di, L_seg,
-                                ref, P_sat, Dh=self.Di)
+                                ref, P_sat, Dh=self.Di) * inp.cf_dp_ref
                         except:
                             dp_seg = 0.0
                         seg_result.dp_ref = dp_seg
@@ -472,7 +478,7 @@ class HXSolver:
                 hx_type=inp.hx_type,
                 evap_corr=self.corr.get("evap"),
                 cond_corr=self.corr.get("cond"),
-            )
+            ) * inp.cf_hi
 
             # --- Fin efficiency ---
             if is_wet:
@@ -706,6 +712,9 @@ class HXSolver:
             A_ratio = self.geo.A_total / self.geo.A_c if self.geo.A_c > 0 else 10
             Kc = 0.42 * (1 - sigma ** 2)
             Ke = max((1 - sigma ** 2 - 0.4 * (1 - sigma ** 2) ** 1.25), 0.0)
+
+        # Apply correction factor to f
+        f *= inp.cf_f
 
         # Kays & London full pressure drop
         dp = G_air ** 2 / (2 * rho_in) * (
