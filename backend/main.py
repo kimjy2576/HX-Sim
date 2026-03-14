@@ -77,7 +77,7 @@ class MCHXSpecInput(BaseModel):
     W: float = 0.6
     H: float = 0.4
     D: float = 0.020
-    n_slabs: int = 1
+    Nr: int = 1
     ch_width: float = 0.001
     ch_height: float = 0.0015
     ch_wall: float = 0.0003
@@ -91,7 +91,7 @@ class MCHXSpecInput(BaseModel):
     fin_height: float = 0.008
     k_fin: float = 200.0
     N_seg: int = 5
-    N_tubes: int = 40
+    Nt: int = 40
     passes: Optional[List[List[int]]] = None  # baffle passes: [[tube_indices], ...]
 
 
@@ -293,14 +293,14 @@ def simulate(req: SimRequest):
             m_in = req.mchx_spec or MCHXSpecInput()
             mchx = MCHXSpec(
                 W=m_in.W, H=m_in.H, D=m_in.D,
-                n_slabs=m_in.n_slabs,
+                Nr=m_in.Nr,
                 ch_width=m_in.ch_width, ch_height=m_in.ch_height,
                 ch_wall=m_in.ch_wall, n_ports=m_in.n_ports,
                 tube_height=m_in.tube_height, tube_pitch=m_in.tube_pitch,
                 louver_pitch=m_in.louver_pitch, louver_angle=m_in.louver_angle,
                 fin_pitch=m_in.fin_pitch, fin_thickness=m_in.fin_thickness,
                 fin_height=m_in.fin_height, k_fin=m_in.k_fin,
-                N_seg=m_in.N_seg, N_tubes=m_in.N_tubes,
+                N_seg=m_in.N_seg, Nt=m_in.Nt,
                 passes=m_in.passes or [],
             )
 
@@ -373,7 +373,7 @@ def simulate(req: SimRequest):
             G_air_mchx = rho_air * V_air_resolved / geo_temp.sigma if geo_temp.sigma > 0 else 5.0
             Re_Dc_val = G_air_mchx * mchx_resolved.louver_pitch / mu_air  # Re_Lp
             fin_type = "mchx"
-            Nr = mchx_resolved.n_slabs
+            Nr = mchx_resolved.Nr
             spec_vals = build_mchx_spec_values(mchx_resolved, geo_temp, Re_Dc_val)
 
         rec = recommend_correlation(fin_type, Re_Dc_val, Nr, req.hx_type, spec_vals)

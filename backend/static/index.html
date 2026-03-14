@@ -35,10 +35,10 @@ const DEFAULT_FT = {
   N_seg:10,circuit_mode:"custom"
 };
 const DEFAULT_MCHX = {
-  W:0.6,H:0.4,D:0.02,n_slabs:1,ch_width:0.001,ch_height:0.0015,
+  W:0.6,H:0.4,D:0.02,Nr:1,ch_width:0.001,ch_height:0.0015,
   ch_wall:0.0003,n_ports:12,tube_height:0.002,tube_pitch:0.01,
   louver_pitch:0.0013,louver_angle:27,fin_pitch:0.0014,fin_thickness:0.0001,
-  fin_height:0.008,k_fin:200,N_seg:5,N_tubes:40
+  fin_height:0.008,k_fin:200,N_seg:5,Nt:40
 };
 const REFRIGERANTS = ["R410A","R134a","R32","R290","R1234yf","R22","R407C","R404A","R513A","R454C"];
 
@@ -175,7 +175,7 @@ function App() {
 
   // ── Save / Load defaults via localStorage ──
   const STORAGE_KEY = "hxsim_defaults";
-  const STORAGE_VER = 2; // increment to invalidate old saves
+  const STORAGE_VER = 3; // increment to invalidate old saves
   const [saveFlash,setSaveFlash]=useState(false);
   const collectState = ()=>({_ver:STORAGE_VER,hxType,mode,airIn,refIn,flow,solverCfg,corrFact,ftSpec,mchxSpec,airCorr,fCorr,refCorr,dpRefCorr});
   const saveDefaults = ()=>{
@@ -289,8 +289,8 @@ function App() {
         const uniq=[...new Set(allB)];
         if(uniq.length>0){
           const passes=[];let st=0;
-          for(const b of uniq){if(b>=st&&b<ms.N_tubes-1){passes.push(Array.from({length:b+1-st},(_,i)=>st+i));st=b+1;}}
-          passes.push(Array.from({length:ms.N_tubes-st},(_,i)=>st+i));
+          for(const b of uniq){if(b>=st&&b<ms.Nt-1){passes.push(Array.from({length:b+1-st},(_,i)=>st+i));st=b+1;}}
+          passes.push(Array.from({length:ms.Nt-st},(_,i)=>st+i));
           ms.passes=passes;
         }
         delete ms.baffles;
@@ -1065,20 +1065,20 @@ function App() {
             <InputGroup label="📐 MCHX Geometry">
               <Field label="W" unit="m" value={mchxSpec.W} onChange={v=>uM("W",v)}/>
               <Field label="H" unit="m" value={mchxSpec.H} onChange={v=>uM("H",v)}/>
+              <Field label="Nr" unit="슬랩" value={mchxSpec.Nr} onChange={v=>uM("Nr",parseInt(v)||1)}/>
+              <Field label="Nt" unit="튜브" value={mchxSpec.Nt} onChange={v=>uM("Nt",parseInt(v)||1)}/>
               <Field label="ch_w" unit="mm" value={mchxSpec.ch_width*1000} onChange={v=>uM("ch_width",v/1000)}/>
               <Field label="ch_h" unit="mm" value={mchxSpec.ch_height*1000} onChange={v=>uM("ch_height",v/1000)}/>
               <Field label="n_ports" value={mchxSpec.n_ports} onChange={v=>uM("n_ports",parseInt(v)||1)}/>
-              <Field label="N_tubes" value={mchxSpec.N_tubes} onChange={v=>uM("N_tubes",parseInt(v)||1)}/>
               <Field label="Lp" unit="mm" value={mchxSpec.louver_pitch*1000} onChange={v=>uM("louver_pitch",v/1000)}/>
               <Field label="θ" unit="°" value={mchxSpec.louver_angle} onChange={v=>uM("louver_angle",v)}/>
               <Field label="Fp" unit="mm" value={mchxSpec.fin_pitch*1000} onChange={v=>uM("fin_pitch",v/1000)}/>
               <Field label="Fl" unit="mm" value={mchxSpec.fin_height*1000} onChange={v=>uM("fin_height",v/1000)}/>
-              <Field label="n_slabs" value={mchxSpec.n_slabs} onChange={v=>uM("n_slabs",parseInt(v)||1)}/>
               <Field label="N_seg" unit="/tube" value={mchxSpec.N_seg} onChange={v=>uM("N_seg",parseInt(v)||1)}/>
 
               {/* ── MCHX Baffle Circuit Design ── */}
               {(()=>{ try {
-                const Nt=mchxSpec.N_tubes;
+                const Nt=mchxSpec.Nt;
                 const baf=mchxSpec.baffles||{front:[],back:[]};
                 const circColors=["#4ecdc4","#ff6b6b","#45b7d1","#96ceb4","#feca57","#ff9ff3","#54a0ff","#5f27cd"];
 

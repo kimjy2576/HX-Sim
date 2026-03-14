@@ -142,8 +142,8 @@ class HXSolver:
             self.geo = MCHXGeo.from_spec(inp.mchx_spec)
             self.spec = inp.mchx_spec
             self.Di = self.geo.Dh_ref
-            self.Nr = inp.mchx_spec.n_slabs
-            self.Nt = inp.mchx_spec.N_tubes
+            self.Nr = inp.mchx_spec.Nr
+            self.Nt = inp.mchx_spec.Nt
             self.N_seg = inp.mchx_spec.N_seg
 
         # Auto-select correlations

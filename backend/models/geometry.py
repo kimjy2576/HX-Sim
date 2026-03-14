@@ -279,7 +279,7 @@ class MCHXSpec:
     D: float = 0.020        # depth (air flow direction, single slab)
 
     # Slab
-    n_slabs: int = 1        # number of slabs (air-direction rows)
+    Nr: int = 1              # rows (air flow direction, slabs)
 
     # Channel
     ch_width: float = 0.001    # [m]
@@ -300,7 +300,7 @@ class MCHXSpec:
     k_fin: float = 200.0           # [W/(m·K)]
 
     N_seg: int = 5
-    N_tubes: int = 40  # total tubes in height direction
+    Nt: int = 40             # columns (height direction, tubes)
 
     # Multi-pass (from baffle design)
     passes: list = field(default_factory=list)  # [[tube_indices], ...] per pass, empty = all parallel
@@ -332,13 +332,13 @@ class MCHXGeo:
         g.Dh_ref = 2 * s.ch_width * s.ch_height / (s.ch_width + s.ch_height)
 
         # Number of channels total
-        g.N_ch = s.N_tubes * s.n_ports
+        g.N_ch = s.Nt * s.n_ports
         g.n_ports_total = g.N_ch
 
         # Internal area per channel
         perimeter_ch = 2 * (s.ch_width + s.ch_height)
         A_i_per_ch = perimeter_ch * s.W  # per channel
-        g.A_i = A_i_per_ch * g.N_ch * s.n_slabs
+        g.A_i = A_i_per_ch * g.N_ch * s.Nr
 
         # Air-side geometry — frontal area is face perpendicular to air flow
         g.A_fr = s.H * s.W
@@ -346,21 +346,21 @@ class MCHXGeo:
         # Fin area (louver fin between tubes)
         n_fins_per_tube_gap = int((s.W) / s.fin_pitch)
         fin_area_one = 2 * s.fin_height * s.D  # two sides
-        g.A_fin = n_fins_per_tube_gap * fin_area_one * (s.N_tubes - 1) * s.n_slabs
+        g.A_fin = n_fins_per_tube_gap * fin_area_one * (s.Nt - 1) * s.Nr
 
         # Tube external area
-        tube_ext = 2 * s.W * s.tube_height * s.N_tubes * s.n_slabs
+        tube_ext = 2 * s.W * s.tube_height * s.Nt * s.Nr
         g.A_total = g.A_fin + tube_ext
 
         # Minimum free-flow area
         fin_blockage = n_fins_per_tube_gap * s.fin_thickness * s.fin_height
-        g.A_c = s.H * s.D * s.n_slabs - s.N_tubes * s.tube_height * s.D * s.n_slabs - fin_blockage * s.n_slabs
+        g.A_c = s.H * s.D * s.Nr - s.Nt * s.tube_height * s.D * s.Nr - fin_blockage * s.Nr
         g.A_c = max(g.A_c, g.A_fr * 0.3)
         g.sigma = g.A_c / g.A_fr if g.A_fr > 0 else 0.5
 
         # Air-side hydraulic diameter
         if g.A_total > 0:
-            g.Dh_air = 4 * g.A_c * s.D * s.n_slabs / g.A_total
+            g.Dh_air = 4 * g.A_c * s.D * s.Nr / g.A_total
         else:
             g.Dh_air = 0.003
 
