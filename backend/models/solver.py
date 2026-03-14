@@ -329,26 +329,74 @@ class HXSolver:
 
                         # Update refrigerant state (per-tube Q, not total pass Q)
                         Q_ref_seg = seg_result.Q / mchx_tpp if mchx_tpp > 1 else seg_result.Q
-                        if 0 <= x_ref <= 1:
+
+                        # Determine phase: use T_ref vs T_sat to distinguish
+                        # superheated (x>=1, T>Tsat) from saturated vapor (x=1, T=Tsat)
+                        T_sat_K = inp.T_sat
+                        is_superheated = (x_ref >= 1.0 and T_ref > T_sat_K + 0.05)
+                        is_subcooled = (x_ref <= 0.0 and T_ref < T_sat_K - 0.05)
+                        is_two_phase = not is_superheated and not is_subcooled
+
+                        if is_two_phase:
+                            # Force T_ref = Tsat during two-phase
+                            T_ref = T_sat_K
                             if h_fg > 0 and m_ref_local > 0:
                                 dx = Q_ref_seg / (m_ref_local * h_fg)
                                 if inp.mode == "evap":
                                     x_ref += dx
                                 else:
                                     x_ref -= dx
-                        else:
-                            if x_ref > 1:
-                                try:
-                                    cp_v = ref.cp_v(P_sat)
-                                    if m_ref_local > 0:
-                                        T_ref += Q_ref_seg / (m_ref_local * cp_v)
-                                except: pass
-                            elif x_ref < 0:
-                                try:
-                                    cp_l = ref.cp_l(P_sat)
-                                    if m_ref_local > 0:
-                                        T_ref -= Q_ref_seg / (m_ref_local * cp_l)
-                                except: pass
+                                # Handle boundary crossing: compute partial Q for single-phase
+                                if x_ref > 1.0:
+                                    Q_excess = (x_ref - 1.0) * m_ref_local * h_fg
+                                    x_ref = 1.0
+                                    try:
+                                        cp_v = ref.cp_v(P_sat)
+                                        if m_ref_local > 0 and cp_v > 0:
+                                            T_ref = T_sat_K + Q_excess / (m_ref_local * cp_v)
+                                    except: pass
+                                elif x_ref < 0.0:
+                                    Q_excess = (-x_ref) * m_ref_local * h_fg
+                                    x_ref = 0.0
+                                    try:
+                                        cp_l = ref.cp_l(P_sat)
+                                        if m_ref_local > 0 and cp_l > 0:
+                                            T_ref = T_sat_K - Q_excess / (m_ref_local * cp_l)
+                                    except: pass
+                        elif is_superheated:
+                            try:
+                                cp_v = ref.cp_v(P_sat)
+                                if m_ref_local > 0 and cp_v > 0:
+                                    dT = Q_ref_seg / (m_ref_local * cp_v)
+                                    if inp.mode == "evap":
+                                        T_ref += dT
+                                    else:
+                                        T_ref -= dT
+                                    # Check if desuperheated to Tsat → enter two-phase
+                                    if inp.mode == "cond" and T_ref <= T_sat_K:
+                                        Q_excess = (T_sat_K - T_ref) * m_ref_local * cp_v
+                                        T_ref = T_sat_K
+                                        x_ref = 1.0
+                                        if h_fg > 0:
+                                            x_ref -= Q_excess / (m_ref_local * h_fg)
+                            except: pass
+                        elif is_subcooled:
+                            try:
+                                cp_l = ref.cp_l(P_sat)
+                                if m_ref_local > 0 and cp_l > 0:
+                                    dT = Q_ref_seg / (m_ref_local * cp_l)
+                                    if inp.mode == "cond":
+                                        T_ref -= dT
+                                    else:
+                                        T_ref += dT
+                                    # Check if heated to Tsat → enter two-phase
+                                    if inp.mode == "evap" and T_ref >= T_sat_K:
+                                        Q_excess = (T_ref - T_sat_K) * m_ref_local * cp_l
+                                        T_ref = T_sat_K
+                                        x_ref = 0.0
+                                        if h_fg > 0:
+                                            x_ref += Q_excess / (m_ref_local * h_fg)
+                            except: pass
 
                 circ_outlets.append((x_ref, T_ref, dp_circ))
                 circ_paths.append(circ_seg_keys)
@@ -527,7 +575,9 @@ class HXSolver:
             A_o_seg = self.geo.A_total / (self.Nr * self.Nt * self.N_seg)
 
         # Initial T_wall guess
-        T_w = (T_air + (T_ref if 0 <= x_ref <= 1 else T_ref)) / 2
+        T_sat_K0 = inp.T_sat
+        T_ref_g = T_ref if (x_ref >= 1.0 and T_ref > T_sat_K0 + 0.05) or (x_ref <= 0.0 and T_ref < T_sat_K0 - 0.05) else T_sat_K0
+        T_w = (T_air + T_ref_g) / 2
 
         # Check wet/dry
         is_wet = (T_w < T_dp) and (inp.mode == "evap")
@@ -568,12 +618,18 @@ class HXSolver:
 
             # --- NTU-epsilon ---
             C_air_seg = 1006.0 * (m_ref_tube * self.Nt)  # approximate
-            # For segment: use simple Q = UA × LMTD approach
+            # T_ref_eff: actual refrigerant temp for heat transfer
+            T_sat_K = inp.T_sat
+            if x_ref > 1 or (x_ref >= 1.0 and T_ref > T_sat_K + 0.05):
+                T_ref_eff = T_ref  # superheated
+            elif x_ref < 0 or (x_ref <= 0.0 and T_ref < T_sat_K - 0.05):
+                T_ref_eff = T_ref  # subcooled
+            else:
+                T_ref_eff = T_sat_K  # two-phase
+
             if inp.mode == "evap":
-                T_ref_eff = T_ref if x_ref > 1 else inp.T_sat
                 dT = T_air - T_ref_eff
             else:
-                T_ref_eff = T_ref if x_ref < 0 else inp.T_sat
                 dT = T_ref_eff - T_air
 
             Q_air = UA * dT if dT > 0 else 0
