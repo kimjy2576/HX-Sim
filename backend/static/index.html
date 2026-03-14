@@ -1039,9 +1039,9 @@ function App() {
                 });
                 const nc = circuits.length;
 
-                // Inlet/outlet of first circuit
-                const inletTube=circuits.length>0?circuits[0][0]:null;
-                const outletTube=circuits.length>0?circuits[0][circuits[0].length-1]:null;
+                // Inlet/outlet: use user-set values, fall back to circuit endpoints
+                const inletTube=ftSpec.inlet||(circuits.length>0?circuits[0][0]:null);
+                const outletTube=ftSpec.outlet||(circuits.length>0?circuits[0][circuits[0].length-1]:null);
 
                 // Determine which FACE each endpoint belongs to
                 // An endpoint's free face (no bend) = where the header connects
@@ -1168,23 +1168,27 @@ function App() {
                           const info=cellMap[r][c];
                           const clr=info?circColors[info.circ%circColors.length]:C.surface;
                           const isFirst=bendFirst&&bendFirst.r===r&&bendFirst.c===c;
-                          const isInlet=inletTube&&inletTube[0]===r&&inletTube[1]===c&&inletFace===face;
-                          const isOutlet=outletTube&&outletTube[0]===r&&outletTube[1]===c&&outletFace===face;
+                          const isInlet=inletTube&&inletTube[0]===r&&inletTube[1]===c;
+                          const isOutlet=outletTube&&outletTube[0]===r&&outletTube[1]===c;
+                          const showIn=isInlet&&(inletFace===face||(!inletFace));
+                          const showOut=isOutlet&&(outletFace===face||(!outletFace));
                           const picking=circEditMode==="inlet"||circEditMode==="outlet";
                           const pickClr=circEditMode==="inlet"?C.err:C.success;
                           return (
                             <g key={`t${r}-${c}`} onClick={()=>onFaceTubeClick(r,c)}
                               style={{cursor:picking?"crosshair":"pointer"}}>
-                              {picking&&info&&<circle cx={x} cy={y} r={13}
-                                fill="none" stroke={pickClr} strokeWidth={1} strokeDasharray="2,2" opacity={0.5}/>}
+                              {picking&&<circle cx={x} cy={y} r={13}
+                                fill="none" stroke={pickClr} strokeWidth={1} strokeDasharray="2,2" opacity={0.4}/>}
                               <circle cx={x} cy={y} r={10}
-                                fill={isFirst?"#fff":isInlet?C.err:isOutlet?C.success:info?clr:C.surface}
-                                stroke={isFirst?C.accent:isInlet?C.err:isOutlet?C.success:info?clr:C.border}
-                                strokeWidth={isFirst?2.5:(isInlet||isOutlet)?2.5:1} opacity={info?0.9:0.4}/>
+                                fill={isFirst?"#fff":showIn?C.err:showOut?C.success:info?clr:C.surface}
+                                stroke={isFirst?C.accent:showIn?C.err:showOut?C.success:info?clr:C.border}
+                                strokeWidth={isFirst?2.5:(showIn||showOut)?2.5:1}
+                                opacity={(showIn||showOut)?1:info?0.9:0.4}/>
                               <text x={x} y={y+3} textAnchor="middle"
-                                style={{fontSize:isInlet||isOutlet?6:7,fill:isFirst?C.bg:(isInlet||isOutlet)?"#fff":info?"#fff":C.dim,
+                                style={{fontSize:showIn||showOut?6:7,
+                                  fill:isFirst?C.bg:(showIn||showOut)?"#fff":info?"#fff":C.dim,
                                   fontWeight:700,pointerEvents:"none"}}>
-                                {isInlet?"IN":isOutlet?"OUT":info?info.order+1:""}
+                                {showIn?"IN":showOut?"OUT":info?info.order+1:""}
                               </text>
                             </g>
                           );
