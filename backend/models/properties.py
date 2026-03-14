@@ -26,56 +26,61 @@ class RefrigerantProperties:
         self.P_crit = CP.PropsSI("Pcrit", self.fluid)
         self.T_crit = CP.PropsSI("Tcrit", self.fluid)
         self.M = CP.PropsSI("M", self.fluid)  # molar mass [kg/mol]
+        self._cache = {}  # property cache keyed by (method_name, P_rounded)
+
+    def _cached(self, key, P, fn):
+        """Cache wrapper — rounds P to 1 Pa to avoid float issues."""
+        P_r = round(P, 0)
+        ck = (key, P_r)
+        if ck not in self._cache:
+            self._cache[ck] = fn()
+        return self._cache[ck]
 
     # ------ saturation ------
     def T_sat(self, P: float) -> float:
-        """Saturation temperature [K] at pressure P [Pa]."""
-        return CP.PropsSI("T", "P", P, "Q", 0, self.fluid)
+        return self._cached("T_sat", P, lambda: CP.PropsSI("T", "P", P, "Q", 0, self.fluid))
 
     def P_sat(self, T: float) -> float:
-        """Saturation pressure [Pa] at temperature T [K]."""
         return CP.PropsSI("P", "T", T, "Q", 0, self.fluid)
 
     # ------ two-phase ------
     def h_fg(self, P: float) -> float:
-        """Latent heat [J/kg]."""
-        h_l = CP.PropsSI("H", "P", P, "Q", 0, self.fluid)
-        h_v = CP.PropsSI("H", "P", P, "Q", 1, self.fluid)
-        return h_v - h_l
+        return self._cached("h_fg", P, lambda: (
+            CP.PropsSI("H", "P", P, "Q", 1, self.fluid) -
+            CP.PropsSI("H", "P", P, "Q", 0, self.fluid)))
 
     def rho_l(self, P: float) -> float:
-        return CP.PropsSI("D", "P", P, "Q", 0, self.fluid)
+        return self._cached("rho_l", P, lambda: CP.PropsSI("D", "P", P, "Q", 0, self.fluid))
 
     def rho_v(self, P: float) -> float:
-        return CP.PropsSI("D", "P", P, "Q", 1, self.fluid)
+        return self._cached("rho_v", P, lambda: CP.PropsSI("D", "P", P, "Q", 1, self.fluid))
 
     def mu_l(self, P: float) -> float:
-        return CP.PropsSI("V", "P", P, "Q", 0, self.fluid)
+        return self._cached("mu_l", P, lambda: CP.PropsSI("V", "P", P, "Q", 0, self.fluid))
 
     def mu_v(self, P: float) -> float:
-        return CP.PropsSI("V", "P", P, "Q", 1, self.fluid)
+        return self._cached("mu_v", P, lambda: CP.PropsSI("V", "P", P, "Q", 1, self.fluid))
 
     def k_l(self, P: float) -> float:
-        return CP.PropsSI("L", "P", P, "Q", 0, self.fluid)
+        return self._cached("k_l", P, lambda: CP.PropsSI("L", "P", P, "Q", 0, self.fluid))
 
     def k_v(self, P: float) -> float:
-        return CP.PropsSI("L", "P", P, "Q", 1, self.fluid)
+        return self._cached("k_v", P, lambda: CP.PropsSI("L", "P", P, "Q", 1, self.fluid))
 
     def cp_l(self, P: float) -> float:
-        return CP.PropsSI("C", "P", P, "Q", 0, self.fluid)
+        return self._cached("cp_l", P, lambda: CP.PropsSI("C", "P", P, "Q", 0, self.fluid))
 
     def cp_v(self, P: float) -> float:
-        return CP.PropsSI("C", "P", P, "Q", 1, self.fluid)
+        return self._cached("cp_v", P, lambda: CP.PropsSI("C", "P", P, "Q", 1, self.fluid))
 
     def Pr_l(self, P: float) -> float:
-        return CP.PropsSI("Prandtl", "P", P, "Q", 0, self.fluid)
+        return self._cached("Pr_l", P, lambda: CP.PropsSI("Prandtl", "P", P, "Q", 0, self.fluid))
 
     def Pr_v(self, P: float) -> float:
-        return CP.PropsSI("Prandtl", "P", P, "Q", 1, self.fluid)
+        return self._cached("Pr_v", P, lambda: CP.PropsSI("Prandtl", "P", P, "Q", 1, self.fluid))
 
     def sigma(self, P: float) -> float:
-        """Surface tension [N/m]."""
-        return CP.PropsSI("I", "P", P, "Q", 0, self.fluid)
+        return self._cached("sigma", P, lambda: CP.PropsSI("I", "P", P, "Q", 0, self.fluid))
 
     def P_r(self, P: float) -> float:
         """Reduced pressure P/P_crit."""
@@ -84,14 +89,17 @@ class RefrigerantProperties:
     # ------ single-phase ------
     def props_single(self, T: float, P: float) -> dict:
         """Single-phase properties at T [K], P [Pa]."""
-        return {
-            "rho": CP.PropsSI("D", "T", T, "P", P, self.fluid),
-            "mu": CP.PropsSI("V", "T", T, "P", P, self.fluid),
-            "k": CP.PropsSI("L", "T", T, "P", P, self.fluid),
-            "cp": CP.PropsSI("C", "T", T, "P", P, self.fluid),
-            "Pr": CP.PropsSI("Prandtl", "T", T, "P", P, self.fluid),
-            "h": CP.PropsSI("H", "T", T, "P", P, self.fluid),
-        }
+        ck = ("props_single", round(T, 1), round(P, 0))
+        if ck not in self._cache:
+            self._cache[ck] = {
+                "rho": CP.PropsSI("D", "T", T, "P", P, self.fluid),
+                "mu": CP.PropsSI("V", "T", T, "P", P, self.fluid),
+                "k": CP.PropsSI("L", "T", T, "P", P, self.fluid),
+                "cp": CP.PropsSI("C", "T", T, "P", P, self.fluid),
+                "Pr": CP.PropsSI("Prandtl", "T", T, "P", P, self.fluid),
+                "h": CP.PropsSI("H", "T", T, "P", P, self.fluid),
+            }
+        return self._cache[ck]
 
     # ------ Lockhart-Martinelli parameter ------
     def Xtt(self, x: float, P: float) -> float:
