@@ -304,6 +304,7 @@ class MCHXSpec:
 
     # Multi-pass (from baffle design)
     passes: list = field(default_factory=list)  # [[tube_indices], ...] per pass, empty = all parallel
+    pass_slabs: list = field(default_factory=list)  # [slab_idx, ...] per pass
 
 
 @dataclass

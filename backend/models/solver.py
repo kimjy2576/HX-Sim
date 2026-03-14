@@ -191,25 +191,21 @@ class HXSolver:
             # MCHX: check for multi-pass (baffle) design
             mspec = inp.mchx_spec
             if mspec.passes and len(mspec.passes) > 1:
-                # Multi-pass MCHX: each pass = group of parallel tubes
-                # Keep physical Nr/Nt, use ONE representative tube per pass
-                # Q per rep tube is correct (physical area), then scale by tpp
                 self._mchx_multipass = True
                 self._pass_info = []
                 A_cs_port = mspec.ch_width * mspec.ch_height
-                counter = inp.flow_arrangement == "counter"
                 circuit = []
+                pass_slabs = mspec.pass_slabs if mspec.pass_slabs else [0] * len(mspec.passes)
                 for pi, pass_tubes in enumerate(mspec.passes):
                     tpp = len(pass_tubes)
                     m_per_tube = inp.m_ref / tpp
                     m_per_port = m_per_tube / mspec.n_ports
                     G_pass = m_per_port / A_cs_port if A_cs_port > 0 else 100
-                    rep_tube = pass_tubes[0]  # representative tube
-                    self._pass_info.append({"tpp": tpp, "G": G_pass, "m_tube": m_per_tube, "rep": rep_tube, "tubes": pass_tubes})
-                    # Walk rep tube through all slabs
-                    slab_order = list(range(self.Nr - 1, -1, -1)) if (counter == (pi % 2 == 0)) else list(range(self.Nr))
-                    for slab in slab_order:
-                        circuit.append([slab, rep_tube])
+                    rep_tube = pass_tubes[0]
+                    slab = pass_slabs[pi] if pi < len(pass_slabs) else 0
+                    self._pass_info.append({"tpp": tpp, "G": G_pass, "m_tube": m_per_tube, "rep": rep_tube, "tubes": pass_tubes, "slab": slab})
+                    # Each pass goes through its own slab only
+                    circuit.append([slab, rep_tube])
                 circuits = [circuit]
                 # Build tube→pass lookup
                 self._tube_pass_map = {}

@@ -93,6 +93,7 @@ class MCHXSpecInput(BaseModel):
     N_seg: int = 5
     Nt: int = 40
     passes: Optional[List[List[int]]] = None  # baffle passes: [[tube_indices], ...]
+    pass_slabs: Optional[List[int]] = None    # which slab each pass belongs to
 
 
 class SimRequest(BaseModel):
@@ -302,6 +303,7 @@ def simulate(req: SimRequest):
                 fin_height=m_in.fin_height, k_fin=m_in.k_fin,
                 N_seg=m_in.N_seg, Nt=m_in.Nt,
                 passes=m_in.passes or [],
+                pass_slabs=m_in.pass_slabs or [],
             )
 
         # --- Resolve V_air ↔ CMM ---
