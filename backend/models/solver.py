@@ -191,39 +191,35 @@ class HXSolver:
             # MCHX: check for multi-pass (baffle) design
             mspec = inp.mchx_spec
             if mspec.passes and len(mspec.passes) > 1:
-                # Multi-pass MCHX: create 1 circuit visiting tubes in pass order
-                # Each pass's tubes are "parallel" (same G_ref)
-                # Circuit visits all tubes across all slabs, grouped by pass
+                # Multi-pass MCHX: each pass = group of parallel tubes
+                # Keep physical Nr/Nt, use ONE representative tube per pass
+                # Q per rep tube is correct (physical area), then scale by tpp
                 self._mchx_multipass = True
-                self._pass_info = []  # list of {tubes: [...], G_ref: float}
+                self._pass_info = []
                 A_cs_port = mspec.ch_width * mspec.ch_height
+                counter = inp.flow_arrangement == "counter"
                 circuit = []
                 for pi, pass_tubes in enumerate(mspec.passes):
                     tpp = len(pass_tubes)
                     m_per_tube = inp.m_ref / tpp
                     m_per_port = m_per_tube / mspec.n_ports
                     G_pass = m_per_port / A_cs_port if A_cs_port > 0 else 100
-                    self._pass_info.append({"tubes": pass_tubes, "tpp": tpp, "G": G_pass, "m_tube": m_per_tube})
-                    # Direction alternates per pass
-                    slab_range = range(self.Nr) if pi % 2 == 0 else range(self.Nr - 1, -1, -1)
-                    for slab in slab_range:
-                        if pi % 2 == 0:
-                            for t in pass_tubes:
-                                circuit.append([slab, t])
-                        else:
-                            for t in reversed(pass_tubes):
-                                circuit.append([slab, t])
+                    rep_tube = pass_tubes[0]  # representative tube
+                    self._pass_info.append({"tpp": tpp, "G": G_pass, "m_tube": m_per_tube, "rep": rep_tube, "tubes": pass_tubes})
+                    # Walk rep tube through all slabs
+                    slab_order = list(range(self.Nr - 1, -1, -1)) if (counter == (pi % 2 == 0)) else list(range(self.Nr))
+                    for slab in slab_order:
+                        circuit.append([slab, rep_tube])
                 circuits = [circuit]
-                # Build pass lookup: for each (row, tube) → pass index
+                # Build tube→pass lookup
                 self._tube_pass_map = {}
                 for pi, pass_tubes in enumerate(mspec.passes):
                     for t in pass_tubes:
-                        for s in range(self.Nr):
-                            self._tube_pass_map[(s, t)] = pi
+                        self._tube_pass_map[t] = pi
             else:
-                # Default: all parallel (each tube is one circuit through all slabs)
                 self._mchx_multipass = False
                 self._pass_info = None
+                self._tube_pass_map = None
                 circuits = generate_circuits(
                     self.Nr, self.Nt, "row_parallel", inp.flow_arrangement)
 
@@ -285,16 +281,16 @@ class HXSolver:
                 dp_circ = 0.0  # accumulate dp for this circuit
 
                 for pass_idx, (row_idx, col_idx) in enumerate(path):
-                    # MCHX multi-pass: override G_ref per tube's pass
+                    # MCHX multi-pass: override G_ref per pass
                     G_ref_local = G_ref
                     m_ref_local = m_ref_circ
-                    tpp = 1
+                    mchx_tpp = 1  # tubes per pass (for Q scaling)
                     if getattr(self, '_mchx_multipass', False) and self._pass_info:
-                        pi = self._tube_pass_map.get((row_idx, col_idx), 0)
+                        pi = self._tube_pass_map.get(col_idx, 0)  # col_idx = physical tube
                         pinfo = self._pass_info[pi]
                         G_ref_local = pinfo["G"]
                         m_ref_local = pinfo["m_tube"]
-                        tpp = 1  # each tube computed individually, no scaling needed
+                        mchx_tpp = pinfo["tpp"]
 
                     # Alternate segment direction per tube pass (U-bend)
                     if pass_idx % 2 == 0:
@@ -314,6 +310,11 @@ class HXSolver:
                             h_o=h_o, m_ref_tube=m_ref_local,
                         )
 
+                        # Scale Q by tubes_per_pass (1 tube computed, tpp tubes in parallel)
+                        if mchx_tpp > 1:
+                            seg_result.Q *= mchx_tpp
+                            seg_result.Q_latent *= mchx_tpp
+
                         # Refrigerant pressure drop for this segment
                         try:
                             dp_seg = compute_dp_ref_seg(
@@ -326,10 +327,11 @@ class HXSolver:
 
                         seg_dict[(col_idx, row_idx, seg_idx)] = seg_result
 
-                        # Update refrigerant state
+                        # Update refrigerant state (per-tube Q, not total pass Q)
+                        Q_ref_seg = seg_result.Q / mchx_tpp if mchx_tpp > 1 else seg_result.Q
                         if 0 <= x_ref <= 1:
                             if h_fg > 0 and m_ref_local > 0:
-                                dx = seg_result.Q / (m_ref_local * h_fg)
+                                dx = Q_ref_seg / (m_ref_local * h_fg)
                                 if inp.mode == "evap":
                                     x_ref += dx
                                 else:
@@ -339,13 +341,13 @@ class HXSolver:
                                 try:
                                     cp_v = ref.cp_v(P_sat)
                                     if m_ref_local > 0:
-                                        T_ref += seg_result.Q / (m_ref_local * cp_v)
+                                        T_ref += Q_ref_seg / (m_ref_local * cp_v)
                                 except: pass
                             elif x_ref < 0:
                                 try:
                                     cp_l = ref.cp_l(P_sat)
                                     if m_ref_local > 0:
-                                        T_ref -= seg_result.Q / (m_ref_local * cp_l)
+                                        T_ref -= Q_ref_seg / (m_ref_local * cp_l)
                                 except: pass
 
                 circ_outlets.append((x_ref, T_ref, dp_circ))
@@ -395,14 +397,29 @@ class HXSolver:
 
             # ── Update per-(col, seg) air pencil with adaptive omega ──
             h_fg_water = 2501000.0
+            # For MCHX multipass: map non-representative tubes to rep tube's Q
+            _mp = getattr(self, '_mchx_multipass', False)
             for col_idx in range(self.Nt):
                 for seg_idx in range(Ns):
                     T_air_3d[col_idx][seg_idx][0] = inp.T_air_in
                     W_air_3d[col_idx][seg_idx][0] = W_in
                     for row_idx in range(self.Nr):
                         sr = seg_dict.get((col_idx, row_idx, seg_idx))
+                        if not sr and _mp and self._tube_pass_map:
+                            # Look up rep tube for this tube's pass
+                            pi = self._tube_pass_map.get(col_idx)
+                            if pi is not None:
+                                rep = self._pass_info[pi]["rep"]
+                                sr = seg_dict.get((rep, row_idx, seg_idx))
                         Q_seg = sr.Q if sr else 0.0
                         Q_lat = sr.Q_latent if sr else 0.0
+                        # For multipass: Q in seg_dict is scaled by tpp, divide for per-tube
+                        if _mp and sr and self._tube_pass_map:
+                            pi = self._tube_pass_map.get(col_idx)
+                            if pi is not None:
+                                tpp = self._pass_info[pi]["tpp"]
+                                Q_seg = Q_seg / tpp
+                                Q_lat = Q_lat / tpp
                         if m_air_cell > 0:
                             h_cur = self.air.h_simple(
                                 T_air_3d[col_idx][seg_idx][row_idx],
