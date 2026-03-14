@@ -158,6 +158,8 @@ function App() {
   const [fCorr,setFCorr]=useState({mode:"auto",selected:null});
   const [refCorr,setRefCorr]=useState({evap:{mode:"auto",selected:null},cond:{mode:"auto",selected:null}});
   const [dpRefCorr,setDpRefCorr]=useState({mode:"auto",selected:null});
+  const [bendFace,setBendFace]=useState("front");
+  const [bendFirst,setBendFirst]=useState(null);
   const [result,setResult]=useState(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -232,7 +234,31 @@ function App() {
       if(dpRefCorr.mode==="manual"&&dpRefCorr.selected) body.dp_ref_corr=dpRefCorr.selected;
       if(refIn.stateMode==="T") body.T_sat_C=refIn.T_sat; else body.P_sat_kPa=refIn.P_sat;
       if(!refIn.twoPhase&&refIn.T_ref_in!==null) body.T_ref_in_C=refIn.T_ref_in;
-      if(hxType==="FT") body.ft_spec=ftSpec; else body.mchx_spec=mchxSpec;
+      if(hxType==="FT"){
+        const spec={...ftSpec};
+        // Convert bends → circuits for custom mode
+        if(spec.circuit_mode==="custom"&&spec.bends){
+          const fm={},bm={};
+          (spec.bends.front||[]).forEach(([r1,c1,r2,c2])=>{fm[`${r1},${c1}`]=[r2,c2];fm[`${r2},${c2}`]=[r1,c1];});
+          (spec.bends.back||[]).forEach(([r1,c1,r2,c2])=>{bm[`${r1},${c1}`]=[r2,c2];bm[`${r2},${c2}`]=[r1,c1];});
+          const visited=new Set(),circs=[];
+          for(let c2=0;c2<spec.Nt;c2++) for(let r=0;r<spec.Nr;r++){
+            const k=`${r},${c2}`;
+            if(visited.has(k)) continue;
+            const hasF=k in fm,hasB=k in bm;
+            if((hasF&&hasB)||(!hasF&&!hasB)) continue;
+            const path=[]; let cur=[r,c2]; let lk=hasB?"back":"front";
+            path.push([...cur]);visited.add(`${cur[0]},${cur[1]}`);
+            while(true){const map=lk==="front"?fm:bm;const ck=`${cur[0]},${cur[1]}`;
+              if(!(ck in map))break;const nx=map[ck];path.push([...nx]);
+              visited.add(`${nx[0]},${nx[1]}`);cur=nx;lk=lk==="front"?"back":"front";}
+            if(path.length>1)circs.push(path);
+          }
+          spec.circuits=circs;
+        }
+        delete spec.bends; // Don't send bends to backend
+        body.ft_spec=spec;
+      } else body.mchx_spec=mchxSpec;
       body.max_outer=solverCfg.max_outer;
       body.outer_tol_pct=solverCfg.tol_pct;
       body.cf_j=corrFact.cf_j; body.cf_f=corrFact.cf_f;
@@ -735,14 +761,16 @@ function App() {
               {(()=>{
                 const Nr=ftSpec.Nr, Nt=ftSpec.Nt;
                 const circColors = ["#4ecdc4","#ff6b6b","#45b7d1","#96ceb4","#feca57","#ff9ff3","#54a0ff","#5f27cd"];
+                const isStag = ftSpec.layout==="staggered";
                 const counter = flow==="counter";
+                const isCustom = ftSpec.circuit_mode==="custom";
 
-                // Generate preset circuits
+                // ── Preset circuit generator ──
                 const genCircuits=(mode)=>{
                   if(mode==="single"){
                     const c=[];
                     for(let col=0;col<Nt;col++){
-                      const rows = ((col%2===0)===counter)?
+                      const rows=((col%2===0)===counter)?
                         Array.from({length:Nr},(_,i)=>Nr-1-i):Array.from({length:Nr},(_,i)=>i);
                       rows.forEach(r=>c.push([r,col]));
                     }
@@ -753,7 +781,7 @@ function App() {
                     const nc2=Math.max(1,Math.floor(Nt/grp));
                     const circs=[];
                     for(let ci=0;ci<nc2;ci++){
-                      const c=[]; const cols2=[];
+                      const c=[],cols2=[];
                       for(let g=0;g<grp&&ci*grp+g<Nt;g++) cols2.push(ci*grp+g);
                       cols2.forEach((col,i)=>{
                         const rows=((i%2===0)===counter)?
@@ -780,83 +808,156 @@ function App() {
                   });
                 };
 
-                // Determine active circuits
-                const isCustom = ftSpec.circuit_mode==="custom";
-                const customCircs = ftSpec.circuits||[];
-                const circuits = isCustom ? customCircs : genCircuits(ftSpec.circuit_mode);
-                const nc = circuits.length;
+                // ── Trace circuits from front/back bends ──
+                const traceBends=(bends)=>{
+                  const fm={}, bm={};
+                  (bends.front||[]).forEach(([r1,c1,r2,c2])=>{
+                    fm[`${r1},${c1}`]=[r2,c2]; fm[`${r2},${c2}`]=[r1,c1];
+                  });
+                  (bends.back||[]).forEach(([r1,c1,r2,c2])=>{
+                    bm[`${r1},${c1}`]=[r2,c2]; bm[`${r2},${c2}`]=[r1,c1];
+                  });
+                  const visited=new Set(), circuits=[];
+                  for(let c=0;c<Nt;c++) for(let r=0;r<Nr;r++){
+                    const k=`${r},${c}`;
+                    if(visited.has(k)) continue;
+                    const hasF=k in fm, hasB=k in bm;
+                    if(hasF&&hasB) continue;
+                    if(!hasF&&!hasB) continue;
+                    const path=[]; let cur=[r,c];
+                    let lookFace=hasB?"back":"front";
+                    path.push([...cur]); visited.add(`${cur[0]},${cur[1]}`);
+                    while(true){
+                      const map=lookFace==="front"?fm:bm;
+                      const ck=`${cur[0]},${cur[1]}`;
+                      if(!(ck in map)) break;
+                      const next=map[ck];
+                      path.push([...next]); visited.add(`${next[0]},${next[1]}`);
+                      cur=next;
+                      lookFace=lookFace==="front"?"back":"front";
+                    }
+                    if(path.length>1) circuits.push(path);
+                  }
+                  return circuits;
+                };
 
-                // Build cell map
-                const cellMap = Array.from({length:Nr},()=>Array.from({length:Nt},()=>null));
+                const bends=ftSpec.bends||{front:[],back:[]};
+                const circuits=isCustom?traceBends(bends):genCircuits(ftSpec.circuit_mode);
+                const nc=circuits.length;
+
+                const cellMap=Array.from({length:Nr},()=>Array.from({length:Nt},()=>null));
                 circuits.forEach((circ,ci)=>{
                   circ.forEach(([r,c],idx)=>{
                     if(r>=0&&r<Nr&&c>=0&&c<Nt) cellMap[r][c]={circ:ci,order:idx};
                   });
                 });
-
-                // Count unassigned
-                let unassigned = 0;
+                let unassigned=0;
                 for(let r=0;r<Nr;r++) for(let c=0;c<Nt;c++) if(!cellMap[r][c]) unassigned++;
 
-                // Click handler for custom drawing
-                const onTubeClick = (r, c) => {
+                // ── Bend click handler ──
+                const onFaceTubeClick=(r,c)=>{
                   if(!isCustom) return;
-                  const circs = [...(ftSpec.circuits||[])];
-                  // Check if already assigned
-                  for(let ci=0;ci<circs.length;ci++){
-                    const idx = circs[ci].findIndex(([rr,cc])=>rr===r&&cc===c);
-                    if(idx>=0){
-                      // Remove from end of that circuit only
-                      if(idx===circs[ci].length-1){
-                        circs[ci] = circs[ci].slice(0,-1);
-                        if(circs[ci].length===0) circs.splice(ci,1);
-                        uF("circuits", circs);
-                      }
-                      return;
-                    }
+                  if(!bendFirst){setBendFirst({r,c});return;}
+                  const dr=Math.abs(r-bendFirst.r), dc=Math.abs(c-bendFirst.c);
+                  if(dr+dc===0){setBendFirst(null);return;}
+                  if(dr>1||dc>1){setBendFirst(null);return;}
+                  const face=bendFace;
+                  const arr=[...(bends[face]||[])];
+                  const dup=arr.findIndex(([a,b,e,f])=>
+                    (a===bendFirst.r&&b===bendFirst.c&&e===r&&f===c)||
+                    (a===r&&b===c&&e===bendFirst.r&&f===bendFirst.c));
+                  if(dup>=0){ arr.splice(dup,1); }
+                  else {
+                    const k1=`${bendFirst.r},${bendFirst.c}`, k2=`${r},${c}`;
+                    const used1=arr.some(([a,b,e,f])=>`${a},${b}`===k1||`${e},${f}`===k1);
+                    const used2=arr.some(([a,b,e,f])=>`${a},${b}`===k2||`${e},${f}`===k2);
+                    if(used1||used2){setBendFirst(null);return;}
+                    arr.push([bendFirst.r,bendFirst.c,r,c]);
                   }
-                  // Add to last circuit, or create new one
-                  if(circs.length===0) circs.push([]);
-                  const last = circs[circs.length-1];
-                  // Check adjacency: must be in same col (±1 row) or same row (±1 col) or first in circuit
-                  if(last.length>0){
-                    const [lr,lc]=last[last.length-1];
-                    const dr=Math.abs(r-lr), dc=Math.abs(c-lc);
-                    if(!((dr===1&&dc===0)||(dr===0&&dc===1))){
-                      return; // not adjacent
-                    }
-                  }
-                  last.push([r,c]);
-                  uF("circuits", circs);
+                  uF("bends",{...bends,[face]:arr});
+                  setBendFirst(null);
                 };
+                const clearBends=()=>{uF("bends",{front:[],back:[]});setBendFirst(null);};
 
-                const newCircuit = ()=>{
-                  const circs = [...(ftSpec.circuits||[])];
-                  // Only add new if last circuit has tubes
-                  if(circs.length===0||circs[circs.length-1].length>0) circs.push([]);
-                  uF("circuits", circs);
+                // ── SVG layout ──
+                const cW=28,cH=28,oX=22,oY=18;
+                const svgW=Nt*cW+oX+(isStag?cW/2:0)+10;
+                const svgH=Nr*cH+oY+10;
+                const tubeX=(r,c)=>oX+c*cW+cW/2+(isStag&&r%2===1?cW/2:0);
+                const tubeY=(r)=>oY+r*cH+cH/2;
+                const tubeBX=(r,c)=>oX+(Nt-1-c)*cW+cW/2+(isStag&&r%2===1?-cW/2:0);
+
+                const renderFace=(face)=>{
+                  const isFront=face==="front";
+                  const tx=isFront?tubeX:tubeBX;
+                  const faceBends=bends[face]||[];
+                  const isActive=bendFace===face&&isCustom;
+                  return (
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:9,fontWeight:700,textAlign:"center",marginBottom:2,
+                        color:isActive?C.accent:C.dim,cursor:isCustom?"pointer":"default",
+                        padding:"2px 0",borderRadius:4,background:isActive?`${C.accent}15`:"transparent"}}
+                        onClick={()=>{setBendFace(face);setBendFirst(null);}}>
+                        {isFront?"▶ FRONT":"◀ BACK"}{isActive&&isCustom?" ✏️":""}
+                      </div>
+                      <svg width={svgW} height={svgH} style={{display:"block",
+                        border:isActive?`1.5px solid ${C.accent}`:`1px solid ${C.border}22`,
+                        borderRadius:6,cursor:isActive?"crosshair":"default"}}>
+                        {Array.from({length:Nr},(_,r)=>(
+                          <text key={`rl${r}`} x={4} y={tubeY(r)+3} style={{fontSize:7,fill:C.dim}}>R{r}</text>
+                        ))}
+                        {Array.from({length:Nt},(_,c)=>(
+                          <text key={`cl${c}`} x={tx(0,c)} y={oY-4} textAnchor="middle" style={{fontSize:7,fill:C.dim}}>C{c}</text>
+                        ))}
+                        {faceBends.map(([r1,c1,r2,c2],bi)=>{
+                          const x1=tx(r1,c1),y1=tubeY(r1),x2=tx(r2,c2),y2=tubeY(r2);
+                          const info=cellMap[r1]?.[c1];
+                          const clr=info?circColors[info.circ%circColors.length]:C.accent;
+                          const mx=(x1+x2)/2,my=(y1+y2)/2;
+                          const dx=x2-x1,dy=y2-y1;
+                          const side=isFront?-1:1;
+                          const cx2=mx+dy*0.4*side,cy2=my-dx*0.4*side;
+                          return <path key={`b${bi}`} d={`M${x1},${y1} Q${cx2},${cy2} ${x2},${y2}`}
+                            fill="none" stroke={clr} strokeWidth={2} opacity={0.8}/>;
+                        })}
+                        {Array.from({length:Nr},(_,r)=>
+                          Array.from({length:Nt},(_,c)=>{
+                            const x=tx(r,c),y=tubeY(r);
+                            const info=cellMap[r][c];
+                            const clr=info?circColors[info.circ%circColors.length]:C.surface;
+                            const isFirst=bendFirst&&bendFirst.r===r&&bendFirst.c===c&&bendFace===face;
+                            return (
+                              <g key={`t${r}-${c}`} onClick={()=>onFaceTubeClick(r,c)}
+                                style={{cursor:isActive?"pointer":"default"}}>
+                                <circle cx={x} cy={y} r={10}
+                                  fill={isFirst?"#fff":info?clr:C.surface}
+                                  stroke={isFirst?C.accent:info?clr:C.border}
+                                  strokeWidth={isFirst?2.5:1} opacity={info?0.9:0.4}/>
+                                <text x={x} y={y+3} textAnchor="middle"
+                                  style={{fontSize:7,fill:isFirst?C.bg:info?"#fff":C.dim,
+                                    fontWeight:700,pointerEvents:"none"}}>
+                                  {info?info.order+1:""}
+                                </text>
+                              </g>
+                            );
+                          })
+                        )}
+                      </svg>
+                    </div>
+                  );
                 };
-
-                const clearCustom = ()=> uF("circuits", []);
-
-                // SVG dimensions
-                const cW=28, cH=24;
-                const svgW = Nt*cW+56;
-                const svgH = Nr*cH+36;
 
                 return (
                   <div style={{borderLeft:`2px solid ${C.accent}`,paddingLeft:10,marginBottom:6,marginTop:6}}>
                     <div style={{fontSize:9,color:C.accent,fontWeight:700,marginBottom:4}}>REFRIGERANT CIRCUIT</div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:6}}>
-                      {[
-                        {k:"row_parallel",l:"독립"},
-                        {k:"serpentine_2",l:"2열"},
-                        {k:"serpentine_4",l:"4열"},
-                        {k:"single",l:"단일"},
-                        {k:"custom",l:"✏️ 직접"},
-                      ].map(v=>(
-                        <button key={v.k} onClick={()=>{uF("circuit_mode",v.k); if(v.k==="custom"&&!ftSpec.circuits?.length) uF("circuits",[]);}}
-                          style={{padding:"3px 7px",borderRadius:5,border:"none",cursor:"pointer",
+                      {[{k:"row_parallel",l:"독립"},{k:"serpentine_2",l:"2열"},{k:"serpentine_4",l:"4열"},
+                        {k:"single",l:"단일"},{k:"custom",l:"✏️ 직접"}].map(v=>(
+                        <button key={v.k} onClick={()=>{
+                          uF("circuit_mode",v.k);
+                          if(v.k==="custom"&&!ftSpec.bends) uF("bends",{front:[],back:[]});
+                          setBendFirst(null);
+                        }} style={{padding:"3px 7px",borderRadius:5,border:"none",cursor:"pointer",
                             fontSize:9,fontWeight:700,fontFamily:"inherit",
                             background:ftSpec.circuit_mode===v.k?C.accent:C.bg,
                             color:ftSpec.circuit_mode===v.k?C.bg:C.dim}}>
@@ -864,110 +965,71 @@ function App() {
                         </button>
                       ))}
                     </div>
-
-                    {/* Custom mode toolbar */}
                     {isCustom&&(
-                      <div style={{display:"flex",gap:4,marginBottom:6,alignItems:"center"}}>
-                        <button onClick={newCircuit} style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${C.accent}`,
-                          background:"transparent",color:C.accent,fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                          ➕ 새 회로
-                        </button>
-                        <button onClick={clearCustom} style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${C.dim}`,
-                          background:"transparent",color:C.dim,fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                          🗑 초기화
-                        </button>
-                        <span style={{fontSize:9,color:unassigned>0?C.warn:C.success,marginLeft:4}}>
-                          {unassigned>0?`⚠ 미배정 ${unassigned}개`:"✅ 전체 배정"}
-                        </span>
+                      <div style={{display:"flex",gap:4,marginBottom:4,alignItems:"center",flexWrap:"wrap"}}>
+                        <button onClick={clearBends} style={{padding:"3px 8px",borderRadius:4,
+                          border:`1px solid ${C.dim}`,background:"transparent",color:C.dim,
+                          fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🗑 초기화</button>
+                        <span style={{fontSize:9,color:unassigned>0?C.warn:C.success}}>
+                          {unassigned>0?`⚠ 미배정 ${unassigned}개`:`✅ ${nc}회로 완성`}</span>
+                        {bendFirst&&<span style={{fontSize:8,color:C.accent}}>
+                          · R{bendFirst.r}C{bendFirst.c} 선택됨</span>}
                       </div>
                     )}
-
-                    {/* Interactive SVG grid */}
-                    <div style={{overflowX:"auto"}}>
-                      <svg width={svgW} height={svgH} style={{display:"block",cursor:isCustom?"crosshair":"default"}}>
-                        <defs>
-                          <marker id="arrCE2" markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto">
-                            <polygon points="0 0, 5 2, 0 4" fill={C.accent}/></marker>
-                          <marker id="arrFlow" markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto">
-                            <polygon points="0 0, 5 2, 0 4" fill="#fff" opacity="0.6"/></marker>
-                        </defs>
-
-                        {/* AIR arrow */}
-                        <line x1={3} y1={10} x2={3} y2={Nr*cH+22} stroke={C.accent} strokeWidth={1.5} markerEnd="url(#arrCE2)"/>
-                        <text x={3} y={7} textAnchor="middle" style={{fontSize:7,fill:C.accent,fontWeight:700}}>AIR</text>
-
-                        {/* Column labels */}
-                        {Array.from({length:Nt},(_,c)=>(
-                          <text key={`cl${c}`} x={18+c*cW+cW/2} y={10} textAnchor="middle"
-                            style={{fontSize:8,fill:C.dim}}>C{c}</text>
-                        ))}
-                        {/* Row labels */}
-                        {Array.from({length:Nr},(_,r)=>(
-                          <text key={`rl${r}`} x={14} y={16+r*cH+cH/2+3} textAnchor="end"
-                            style={{fontSize:8,fill:C.dim}}>R{r}</text>
-                        ))}
-
-                        {/* Flow lines between consecutive passes */}
-                        {circuits.map((circ,ci)=>{
-                          const clr = circColors[ci%circColors.length];
-                          return circ.slice(0,-1).map(([r1,c1],idx)=>{
-                            const [r2,c2]=circ[idx+1];
-                            const x1=18+c1*cW+cW/2, y1=16+r1*cH+cH/2;
-                            const x2=18+c2*cW+cW/2, y2=16+r2*cH+cH/2;
-                            return (
-                              <line key={`f${ci}-${idx}`} x1={x1} y1={y1} x2={x2} y2={y2}
-                                stroke={clr} strokeWidth={c1!==c2?2:1.2}
-                                strokeDasharray={c1!==c2?"4,2":"none"}
-                                opacity={c1!==c2?0.8:0.4}
-                                markerEnd={c1!==c2?"url(#arrFlow)":"none"}/>
-                            );
-                          });
-                        })}
-
-                        {/* Tube cells */}
-                        {Array.from({length:Nr},(_,r)=>
-                          Array.from({length:Nt},(_,c)=>{
-                            const info = cellMap[r][c];
-                            const x=18+c*cW, y=16+r*cH;
-                            const clr = info ? circColors[info.circ%circColors.length] : C.bg;
-                            const isLast = isCustom && info && customCircs[info.circ] &&
-                              info.order===customCircs[info.circ].length-1;
-                            return (
-                              <g key={`t${r}-${c}`} onClick={()=>onTubeClick(r,c)} style={{cursor:isCustom?"pointer":"default"}}>
-                                <circle cx={x+cW/2} cy={y+cH/2} r={Math.min(cW,cH)/2-2}
-                                  fill={info?clr:C.surface} stroke={isLast?"#fff":C.border}
-                                  strokeWidth={isLast?2:0.5} opacity={info?0.9:0.4}/>
-                                <text x={x+cW/2} y={y+cH/2+3} textAnchor="middle"
-                                  style={{fontSize:7,fill:info?"#fff":C.dim,fontWeight:700,
-                                    textShadow:info?"0 0 2px rgba(0,0,0,0.6)":"none",
-                                    pointerEvents:"none"}}>
-                                  {info ? info.order+1 : ""}
-                                </text>
-                              </g>
-                            );
-                          })
-                        )}
-
-                        {/* Legend */}
-                        <text x={18+Nt*cW+4} y={20} style={{fontSize:8,fill:C.dim,fontWeight:700}}>
-                          {nc}회로
-                        </text>
-                        {isCustom&&unassigned>0&&(
-                          <text x={18+Nt*cW+4} y={32} style={{fontSize:7,fill:C.warn}}>
-                            {unassigned}개 남음
-                          </text>
-                        )}
-                      </svg>
-                    </div>
-
+                    {isCustom?(
+                      <div style={{display:"flex",gap:4}}>
+                        {renderFace("front")}
+                        {renderFace("back")}
+                      </div>
+                    ):(
+                      <div style={{overflowX:"auto"}}>
+                        <svg width={svgW} height={svgH} style={{display:"block"}}>
+                          <defs><marker id="arrCE3" markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto">
+                            <polygon points="0 0, 5 2, 0 4" fill={C.accent}/></marker></defs>
+                          <line x1={3} y1={10} x2={3} y2={Nr*cH+oY} stroke={C.accent} strokeWidth={1.5} markerEnd="url(#arrCE3)"/>
+                          <text x={3} y={7} textAnchor="middle" style={{fontSize:7,fill:C.accent,fontWeight:700}}>AIR</text>
+                          {Array.from({length:Nt},(_,c)=>(
+                            <text key={`cl${c}`} x={tubeX(0,c)} y={oY-4} textAnchor="middle" style={{fontSize:7,fill:C.dim}}>C{c}</text>
+                          ))}
+                          {Array.from({length:Nr},(_,r)=>(
+                            <text key={`rl${r}`} x={4} y={tubeY(r)+3} style={{fontSize:7,fill:C.dim}}>R{r}</text>
+                          ))}
+                          {circuits.map((circ,ci)=>{
+                            const clr=circColors[ci%circColors.length];
+                            return circ.slice(0,-1).map(([r1,c1],idx)=>{
+                              const [r2,c2]=circ[idx+1];
+                              return <line key={`f${ci}-${idx}`}
+                                x1={tubeX(r1,c1)} y1={tubeY(r1)} x2={tubeX(r2,c2)} y2={tubeY(r2)}
+                                stroke={clr} strokeWidth={c1!==c2?2:1} strokeDasharray={c1!==c2?"4,2":"none"} opacity={0.5}/>;
+                            });
+                          })}
+                          {Array.from({length:Nr},(_,r)=>
+                            Array.from({length:Nt},(_,c)=>{
+                              const info=cellMap[r][c];
+                              const clr=info?circColors[info.circ%circColors.length]:C.surface;
+                              return (
+                                <g key={`t${r}-${c}`}>
+                                  <circle cx={tubeX(r,c)} cy={tubeY(r)} r={10}
+                                    fill={info?clr:C.surface} stroke={C.border} strokeWidth={0.5} opacity={info?0.9:0.4}/>
+                                  <text x={tubeX(r,c)} y={tubeY(r)+3} textAnchor="middle"
+                                    style={{fontSize:7,fill:info?"#fff":C.dim,fontWeight:700,pointerEvents:"none"}}>
+                                    {info?info.order+1:""}</text>
+                                </g>);
+                            })
+                          )}
+                          <text x={svgW-8} y={14} textAnchor="end" style={{fontSize:8,fill:C.dim,fontWeight:700}}>{nc}회로</text>
+                        </svg>
+                      </div>
+                    )}
                     {isCustom&&(
-                      <div style={{fontSize:8,color:C.dim,marginTop:4}}>
-                        클릭: 인접 튜브 추가 · 끝 튜브 클릭: 제거 · ➕: 새 회로 시작
+                      <div style={{fontSize:8,color:C.dim,marginTop:3}}>
+                        면 선택(FRONT/BACK) → 튜브 2개 클릭 = 리턴밴드 · 같은 밴드 클릭 = 제거
                       </div>
                     )}
                   </div>
                 );
-              })()}
+              })()} 
+
             </InputGroup>
           ):(
             <InputGroup label="📐 MCHX Geometry">
