@@ -233,6 +233,7 @@ function App() {
   const [bendFace,setBendFace]=useState("front");
   const [bendFirst,setBendFirst]=useState(null);
   const [mchxSlab,setMchxSlab]=useState(0);
+  const [circEditMode,setCircEditMode]=useState("bend"); // "bend" or "inlet"
   const [result,setResult]=useState(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -248,7 +249,7 @@ function App() {
 
   // ── Save / Load defaults via localStorage ──
   const STORAGE_KEY = "hxsim_defaults";
-  const STORAGE_VER = 5; // increment to invalidate old saves
+  const STORAGE_VER = 6; // increment to invalidate old saves
   const [saveFlash,setSaveFlash]=useState(false);
   const collectState = ()=>({_ver:STORAGE_VER,hxType,mode,airIn,refIn,solverCfg,corrFact,ftSpec,mchxSpec,airCorr,fCorr,refCorr,dpRefCorr});
   const saveDefaults = ()=>{
@@ -1055,11 +1056,6 @@ function App() {
                 const inletFace=getEndpointFace(inletTube);
                 const outletFace=getEndpointFace(outletTube);
 
-                // Swap inlet/outlet
-                const swapInlet=()=>{
-                  if(outletTube) uF("inlet",[outletTube[0],outletTube[1]]);
-                };
-
                 // Cell map
                 const cellMap=Array.from({length:Nr},()=>Array.from({length:Nt},()=>null));
                 circuits.forEach((circ,ci)=>{
@@ -1072,6 +1068,11 @@ function App() {
 
                 // ── Bend click handler ──
                 const onFaceTubeClick=(r,c)=>{
+                  if(circEditMode==="inlet"){
+                    uF("inlet",[r,c]);
+                    setCircEditMode("bend");
+                    return;
+                  }
                   if(!bendFirst){setBendFirst({r,c});return;}
                   const dr=Math.abs(r-bendFirst.r), dc=Math.abs(c-bendFirst.c);
                   if(dr+dc===0){setBendFirst(null);return;}
@@ -1160,9 +1161,12 @@ function App() {
                           const isFirst=bendFirst&&bendFirst.r===r&&bendFirst.c===c;
                           const isInlet=inletTube&&inletTube[0]===r&&inletTube[1]===c&&inletFace===face;
                           const isOutlet=outletTube&&outletTube[0]===r&&outletTube[1]===c&&outletFace===face;
+                          const inletMode=circEditMode==="inlet";
                           return (
                             <g key={`t${r}-${c}`} onClick={()=>onFaceTubeClick(r,c)}
-                              style={{cursor:"pointer"}}>
+                              style={{cursor:inletMode?"crosshair":"pointer"}}>
+                              {inletMode&&info&&<circle cx={x} cy={y} r={13}
+                                fill="none" stroke={C.err} strokeWidth={1} strokeDasharray="2,2" opacity={0.5}/>}
                               <circle cx={x} cy={y} r={10}
                                 fill={isFirst?"#fff":isInlet?C.err:isOutlet?C.success:info?clr:C.surface}
                                 stroke={isFirst?C.accent:isInlet?C.err:isOutlet?C.success:info?clr:C.border}
@@ -1201,23 +1205,31 @@ function App() {
                         · R{bendFirst.r}C{bendFirst.c} 선택됨</span>}
                     </div>
 
-                    {/* Inlet/Outlet indicator + swap */}
+                    {/* Inlet/Outlet indicator + mode toggle */}
                     {nc>0&&(
-                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,
-                        padding:"6px 10px",borderRadius:6,background:`${C.bg}`,border:`1px solid ${C.border}`}}>
-                        <span style={{fontSize:9,color:C.dim,fontWeight:700}}>냉매흐름:</span>
-                        <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.err,color:"#fff",fontWeight:700}}>
-                          IN R{inletTube?inletTube[0]:"?"}C{inletTube?inletTube[1]:"?"}
-                        </span>
-                        <span style={{fontSize:9,color:C.dim}}>→</span>
-                        <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.success,color:"#fff",fontWeight:700}}>
-                          OUT R{outletTube?outletTube[0]:"?"}C{outletTube?outletTube[1]:"?"}
-                        </span>
-                        <button onClick={swapInlet} style={{marginLeft:"auto",padding:"3px 10px",borderRadius:5,
-                          border:"none",cursor:"pointer",fontSize:9,fontWeight:700,fontFamily:"inherit",
-                          background:`linear-gradient(135deg,${C.warn},${C.accent3})`,color:C.bg}}>
-                          ↔ 전환
-                        </button>
+                      <div style={{marginBottom:6,padding:"6px 10px",borderRadius:6,background:C.bg,border:`1px solid ${C.border}`}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:circEditMode==="inlet"?4:0}}>
+                          <span style={{fontSize:9,color:C.dim,fontWeight:700}}>냉매:</span>
+                          <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.err,color:"#fff",fontWeight:700}}>
+                            IN R{inletTube?inletTube[0]:"?"}C{inletTube?inletTube[1]:"?"}
+                          </span>
+                          <span style={{fontSize:8,color:C.dim}}>→</span>
+                          <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.success,color:"#fff",fontWeight:700}}>
+                            OUT R{outletTube?outletTube[0]:"?"}C{outletTube?outletTube[1]:"?"}
+                          </span>
+                          <button onClick={()=>{setCircEditMode(circEditMode==="inlet"?"bend":"inlet");setBendFirst(null);}}
+                            style={{marginLeft:"auto",padding:"3px 10px",borderRadius:5,
+                              border:"none",cursor:"pointer",fontSize:9,fontWeight:700,fontFamily:"inherit",
+                              background:circEditMode==="inlet"?C.err:C.card,
+                              color:circEditMode==="inlet"?"#fff":C.warn}}>
+                            {circEditMode==="inlet"?"📍 입구 선택 중...":"📍 입구 변경"}
+                          </button>
+                        </div>
+                        {circEditMode==="inlet"&&(
+                          <div style={{fontSize:8,color:C.err,fontWeight:600}}>
+                            원하는 튜브를 클릭하면 해당 위치가 입구(IN)로 설정됩니다
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1245,7 +1257,7 @@ function App() {
                     </div>
 
                     <div style={{fontSize:8,color:C.dim,marginTop:3}}>
-                      클릭: 밴드 추가/제거 · ↔ 입출구 전환 버튼으로 IN/OUT 교체
+                      {circEditMode==="inlet"?"📍 튜브를 클릭하여 입구(IN) 설정":"클릭: 밴드 추가/제거 · 📍 버튼으로 입구 변경"}
                     </div>
                   </div>
                 );
@@ -1345,25 +1357,37 @@ function App() {
                         fontSize:8,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↩ 리셋</button>
                     </div>
 
-                    {/* Inlet position */}
-                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,
-                      padding:"6px 10px",borderRadius:6,background:C.bg,border:"1px solid "+C.border}}>
-                      <span style={{fontSize:9,color:C.dim,fontWeight:700}}>냉매흐름:</span>
-                      {["bottom","top"].map(p=>{
+                    {/* Inlet indicator + mode toggle */}
+                    <div style={{marginBottom:6,padding:"6px 10px",borderRadius:6,background:C.bg,border:"1px solid "+C.border}}>
+                      {(()=>{
                         const ip=mchxSpec.inlet_pos||"bottom";
-                        const active=ip===p;
-                        const isIn=(p===ip);
-                        const isOut=(p!==ip);
+                        const inT=ip==="bottom"?Nt-1:0;
+                        const outT=ip==="bottom"?0:Nt-1;
                         return (
-                          <button key={p} onClick={()=>uM("inlet_pos",p)}
-                            style={{padding:"3px 10px",borderRadius:5,border:"none",cursor:"pointer",
-                              fontSize:9,fontWeight:700,fontFamily:"inherit",
-                              background:isIn?C.err:isOut?C.success:C.bg,
-                              color:(isIn||isOut)?"#fff":C.dim}}>
-                            {p==="bottom"?"▼ 하단":"▲ 상단"} {isIn?"(IN)":"(OUT)"}
-                          </button>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{fontSize:9,color:C.dim,fontWeight:700}}>냉매:</span>
+                            <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.err,color:"#fff",fontWeight:700}}>
+                              IN T{inT}
+                            </span>
+                            <span style={{fontSize:8,color:C.dim}}>→</span>
+                            <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:C.success,color:"#fff",fontWeight:700}}>
+                              OUT T{outT}
+                            </span>
+                            <button onClick={()=>setCircEditMode(circEditMode==="inlet"?"bend":"inlet")}
+                              style={{marginLeft:"auto",padding:"3px 10px",borderRadius:5,
+                                border:"none",cursor:"pointer",fontSize:9,fontWeight:700,fontFamily:"inherit",
+                                background:circEditMode==="inlet"?C.err:C.card,
+                                color:circEditMode==="inlet"?"#fff":C.warn}}>
+                              {circEditMode==="inlet"?"📍 입구 선택 중...":"📍 입구 변경"}
+                            </button>
+                          </div>
                         );
-                      })}
+                      })()}
+                      {circEditMode==="inlet"&&(
+                        <div style={{fontSize:8,color:C.err,fontWeight:600,marginTop:3}}>
+                          원하는 튜브를 클릭하면 해당 위치가 입구(IN)로 설정됩니다
+                        </div>
+                      )}
                     </div>
 
                     {/* Front/Back tab */}
@@ -1414,12 +1438,25 @@ function App() {
                                 const ip=mchxSpec.inlet_pos||"bottom";
                                 const inT=ip==="bottom"?Nt-1:0;
                                 const outT=ip==="bottom"?0:Nt-1;
+                                const inletMode=circEditMode==="inlet";
                                 return Array.from({length:Nt},(_,t)=>{
                                   const ty=tubeYf(t);
                                   const isIn=s===0&&t===inT;
                                   const isOut=s===Nr-1&&t===outT;
+                                  const onTubeClick=()=>{
+                                    if(inletMode){
+                                      // Set inlet based on which tube was clicked
+                                      uM("inlet_pos",t>=Nt/2?"bottom":"top");
+                                      setCircEditMode("bend");
+                                    } else {
+                                      onBafClick(s,Math.max(0,t-1));
+                                    }
+                                  };
                                   return (
-                                    <g key={"t"+t}>
+                                    <g key={"t"+t} onClick={onTubeClick}
+                                      style={{cursor:inletMode?"crosshair":"pointer"}}>
+                                      {inletMode&&<rect x={sx-3} y={ty-1} width={slabW+6} height={tH+2} rx={3}
+                                        fill="none" stroke={C.err} strokeWidth={0.8} strokeDasharray="2,2" opacity={0.5}/>}
                                       <rect x={sx} y={ty} width={slabW} height={tH} rx={2}
                                         fill={isIn?C.err:isOut?C.success:tubeColor[s][t]}
                                         opacity={isIn||isOut?1:0.75}
