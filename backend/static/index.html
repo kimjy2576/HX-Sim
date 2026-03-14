@@ -1075,20 +1075,13 @@ function App() {
 
                 // ── Bend click handler ──
                 const onFaceTubeClick=(r,c)=>{
-                  if(circEditMode==="inlet"){
-                    const arr=[...(ftSpec.inlets||[])];
+                  if(circEditMode==="inlet"||circEditMode==="outlet"){
+                    const key=circEditMode==="inlet"?"inlets":"outlets";
+                    const arr=[...(ftSpec[key]||[])];
                     const idx=arr.findIndex(a=>a[0]===r&&a[1]===c);
                     if(idx>=0) arr.splice(idx,1); else arr.push([r,c]);
-                    uF("inlets",arr);
-                    setCircEditMode("bend");
-                    return;
-                  }
-                  if(circEditMode==="outlet"){
-                    const arr=[...(ftSpec.outlets||[])];
-                    const idx=arr.findIndex(a=>a[0]===r&&a[1]===c);
-                    if(idx>=0) arr.splice(idx,1); else arr.push([r,c]);
-                    uF("outlets",arr);
-                    setCircEditMode("bend");
+                    uF(key,arr);
+                    // Stay in mode — user clicks button again to exit
                     return;
                   }
                   if(!bendFirst){setBendFirst({r,c});return;}
@@ -1252,25 +1245,25 @@ function App() {
                           <div style={{fontSize:8,color:C.dim}}>회로 없음 — 밴드를 추가하거나 IN/OUT을 먼저 설정하세요</div>
                         )}
                         {/* Add IN / Add OUT buttons */}
-                        <div style={{display:"flex",gap:4,marginTop:nc>0?6:0}}>
+                        <div style={{display:"flex",gap:4,marginTop:nc>0||inlets.length>0||outlets.length>0?6:0}}>
                           <button onClick={()=>{setCircEditMode(circEditMode==="inlet"?"bend":"inlet");setBendFirst(null);}}
-                            style={{padding:"3px 10px",borderRadius:5,border:"none",cursor:"pointer",
+                            style={{padding:"4px 12px",borderRadius:5,border:"none",cursor:"pointer",
                               fontSize:9,fontWeight:700,fontFamily:"inherit",
                               background:circEditMode==="inlet"?C.err:C.err+"22",
                               color:circEditMode==="inlet"?"#fff":C.err}}>
-                            {circEditMode==="inlet"?"📍 IN 선택중...":"📍 IN 추가/제거"}
+                            {circEditMode==="inlet"?"📍 IN 선택중 (완료시 다시 클릭)":"📍 IN 지정"} {inlets.length>0?"("+inlets.length+")":""}
                           </button>
                           <button onClick={()=>{setCircEditMode(circEditMode==="outlet"?"bend":"outlet");setBendFirst(null);}}
-                            style={{padding:"3px 10px",borderRadius:5,border:"none",cursor:"pointer",
+                            style={{padding:"4px 12px",borderRadius:5,border:"none",cursor:"pointer",
                               fontSize:9,fontWeight:700,fontFamily:"inherit",
                               background:circEditMode==="outlet"?C.success:C.success+"22",
                               color:circEditMode==="outlet"?"#fff":C.success}}>
-                            {circEditMode==="outlet"?"📍 OUT 선택중...":"📍 OUT 추가/제거"}
+                            {circEditMode==="outlet"?"📍 OUT 선택중 (완료시 다시 클릭)":"📍 OUT 지정"} {outlets.length>0?"("+outlets.length+")":""}
                           </button>
                         </div>
                         {(circEditMode==="inlet"||circEditMode==="outlet")&&(
                           <div style={{fontSize:8,color:circEditMode==="inlet"?C.err:C.success,fontWeight:600,marginTop:3}}>
-                            튜브 클릭 = {circEditMode==="inlet"?"IN":"OUT"} 추가/제거 (토글)
+                            튜브 클릭 = {circEditMode==="inlet"?"IN":"OUT"} 토글 · 완료 후 버튼 다시 클릭하여 종료
                           </div>
                         )}
                       </div>
@@ -1492,10 +1485,8 @@ function App() {
                                   const onTubeClick=()=>{
                                     if(circEditMode==="inlet"){
                                       uM("inlet_pos",t>=Nt/2?"bottom":"top");
-                                      setCircEditMode("bend");
                                     } else if(circEditMode==="outlet"){
                                       uM("inlet_pos",t>=Nt/2?"top":"bottom");
-                                      setCircEditMode("bend");
                                     } else {
                                       onBafClick(s,Math.max(0,t-1));
                                     }
