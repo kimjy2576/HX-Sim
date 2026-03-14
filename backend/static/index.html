@@ -1090,10 +1090,11 @@ function App() {
               {(()=>{ try {
                 const Nr=mchxSpec.Nr, Nt=mchxSpec.Nt;
                 const circColors=["#4ecdc4","#ff6b6b","#45b7d1","#96ceb4","#feca57","#ff9ff3","#54a0ff","#5f27cd"];
+                const activeFace=bendFace;
 
                 const slabBaf=mchxSpec.slab_baffles||Array.from({length:Nr},()=>({front:[],back:[]}));
-                // slab_conn: [{face:"front"|"back", pos:"top"|"bottom"}, ...]
-                const slabConn=(mchxSpec.slab_conn||[]).map(c=>typeof c==="string"?{face:"front",pos:c}:(c&&c.pos?c:{face:"front",pos:"bottom"}));while(slabConn.length<Math.max(Nr-1,0))slabConn.push({face:"front",pos:"bottom"});
+                const slabConn=(mchxSpec.slab_conn||[]).map(c=>typeof c==="string"?{face:"front",pos:c}:(c&&c.pos?c:{face:"front",pos:"bottom"}));
+                while(slabConn.length<Math.max(Nr-1,0))slabConn.push({face:"front",pos:"bottom"});
 
                 const getBP=(b)=>{
                   const all=[...((b||{}).front||[]),...((b||{}).back||[])].sort((a,c)=>a-c);
@@ -1110,8 +1111,7 @@ function App() {
                 for(let s=0;s<Nr;s++){
                   const sp=slabPasses[s];
                   const conn=s>0?(slabConn[s-1]||{face:"front",pos:"bottom"}):{face:"front",pos:"bottom"};
-                  const rev=(conn.pos==="top");
-                  const order=rev?[...sp].reverse():sp;
+                  const order=(conn.pos==="top")?[...sp].reverse():sp;
                   order.forEach(pass=>{
                     const clr=circColors[gpi%circColors.length];
                     pass.forEach(t=>{tubeColor[s][t]=clr;});
@@ -1119,21 +1119,19 @@ function App() {
                   });
                 }
 
-                const onBafClick=(slab,pos,face)=>{
-                  const arr=[...(slabBaf[slab][face]||[])];
+                const onBafClick=(slab,pos)=>{
+                  const arr=[...(slabBaf[slab][activeFace]||[])];
                   const idx=arr.indexOf(pos);
                   if(idx>=0) arr.splice(idx,1); else arr.push(pos);
                   arr.sort((a,b)=>a-b);
                   const nb=[...slabBaf];
-                  nb[slab]={...slabBaf[slab],[face]:arr};
+                  nb[slab]={...slabBaf[slab],[activeFace]:arr};
                   uM("slab_baffles",nb);
                 };
                 const cycleConn=(ci)=>{
                   const nc=[...slabConn];
                   const cur=nc[ci]||{face:"front",pos:"bottom"};
-                  // Cycle: F-bottom → F-top → B-bottom → B-top → F-bottom
-                  const states=[
-                    {face:"front",pos:"bottom"},{face:"front",pos:"top"},
+                  const states=[{face:"front",pos:"bottom"},{face:"front",pos:"top"},
                     {face:"back",pos:"bottom"},{face:"back",pos:"top"}];
                   const curIdx=states.findIndex(s=>s.face===cur.face&&s.pos===cur.pos);
                   nc[ci]=states[(curIdx+1)%4];
@@ -1144,13 +1142,14 @@ function App() {
                   uM("slab_conn",Array.from({length:Math.max(Nr-1,0)},()=>({face:"front",pos:"bottom"})));
                 };
 
-                // SVG layout
-                const tH=10,tGap=4,slabW=55,slabGap=44,oX=12,oY=26;
+                // SVG
+                const tH=10,tGap=4,slabW=55,slabGap=Nr>1?40:0,oX=14,oY=26;
                 const slabH=Nt*tH+(Nt-1)*tGap;
                 const svgW=oX+Nr*slabW+(Nr-1)*slabGap+oX;
                 const svgH=oY+slabH+18;
-                const slabX=(s)=>oX+s*(slabW+slabGap);
+                const slabXf=(s)=>oX+s*(slabW+slabGap);
                 const tubeYf=(t)=>oY+t*(tH+tGap);
+                const faceClr=activeFace==="front"?C.warn:C.accent3;
 
                 return (
                   <div style={{borderLeft:"2px solid "+C.accent,paddingLeft:10,marginBottom:6,marginTop:8}}>
@@ -1164,25 +1163,40 @@ function App() {
                         fontSize:8,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↩ 리셋</button>
                     </div>
 
-                    <div style={{overflowX:"auto"}}>
+                    {/* Front/Back tab */}
+                    <div style={{display:"flex",gap:0,marginBottom:4}}>
+                      {["front","back"].map(f=>{
+                        const fc=f==="front"?C.warn:C.accent3;
+                        const active=activeFace===f;
+                        const cnt=slabBaf.reduce((a,sb)=>(sb[f]||[]).length+a,0);
+                        return (
+                          <button key={f} onClick={()=>setBendFace(f)}
+                            style={{flex:1,padding:"5px 0",border:"none",cursor:"pointer",
+                              fontSize:10,fontWeight:700,fontFamily:"inherit",
+                              borderBottom:active?"2px solid "+fc:"1px solid "+C.border,
+                              background:active?fc+"15":C.bg,
+                              color:active?fc:C.dim,
+                              borderRadius:active?"6px 6px 0 0":"0"}}>
+                            {f==="front"?"▶ FRONT":"◀ BACK"}
+                            <span style={{fontSize:8,marginLeft:4,opacity:0.6}}>({cnt}배플)</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* SVG — all slabs, active face only */}
+                    <div style={{border:"1px solid "+faceClr+"33",borderRadius:"0 0 6px 6px",padding:4,background:C.bg+"88",overflowX:"auto"}}>
                       <svg width={svgW} height={svgH} style={{display:"block"}}>
-                        <defs>
-                          <marker id="arrMCHX" markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto">
-                            <polygon points="0 0, 5 2, 0 4" fill={C.accent}/></marker>
-                        </defs>
+                        <defs><marker id="arrMCHX" markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto">
+                          <polygon points="0 0, 5 2, 0 4" fill={C.accent}/></marker></defs>
                         <line x1={oX} y1={svgH-5} x2={svgW-oX} y2={svgH-5}
                           stroke={C.accent} strokeWidth={1} markerEnd="url(#arrMCHX)"/>
                         <text x={svgW/2} y={svgH} textAnchor="middle"
                           style={{fontSize:7,fill:C.accent,fontWeight:700}}>AIR →</text>
 
-                        {/* Front/Back labels */}
-                        <text x={oX-2} y={oY-14} style={{fontSize:6,fill:C.warn,fontWeight:700}}>F</text>
-                        <text x={oX+Nr*(slabW+slabGap)-slabGap+slabW+2} y={oY-14} textAnchor="end"
-                          style={{fontSize:6,fill:C.accent3,fontWeight:700}}>B</text>
-
-                        {/* Slabs */}
                         {Array.from({length:Nr},(_,s)=>{
-                          const sx=slabX(s);
+                          const sx=slabXf(s);
+                          const faceBaf=slabBaf[s][activeFace]||[];
                           return (
                             <g key={"s"+s}>
                               <text x={sx+slabW/2} y={oY-12} textAnchor="middle"
@@ -1191,10 +1205,6 @@ function App() {
                                 style={{fontSize:6,fill:C.dim}}>({slabPasses[s].length}p)</text>
                               <rect x={sx-2} y={oY-1} width={slabW+4} height={slabH+2} rx={3}
                                 fill="none" stroke={C.border} strokeWidth={0.5}/>
-
-                              {/* Front/Back divider line */}
-                              <line x1={sx+slabW/2} y1={oY} x2={sx+slabW/2} y2={oY+slabH}
-                                stroke={C.border} strokeWidth={0.3} strokeDasharray="2,3"/>
 
                               {/* Tubes */}
                               {Array.from({length:Nt},(_,t)=>{
@@ -1209,27 +1219,24 @@ function App() {
                                 );
                               })}
 
-                              {/* Baffle click zones */}
+                              {/* Baffle zones — full width, active face only */}
                               {Array.from({length:Nt-1},(_,i)=>{
                                 const y1=tubeYf(i)+tH;
                                 const y2=tubeYf(i+1);
                                 const yMid=(y1+y2)/2;
-                                const hasF=(slabBaf[s].front||[]).includes(i);
-                                const hasB=(slabBaf[s].back||[]).includes(i);
+                                const hasBaf=faceBaf.includes(i);
                                 return (
-                                  <g key={"bf"+i}>
-                                    <rect x={sx-2} y={y1-1} width={slabW/2+2} height={y2-y1+2}
-                                      fill="transparent" cursor="pointer"
-                                      onClick={()=>onBafClick(s,i,"front")}/>
-                                    <rect x={sx+slabW/2} y={y1-1} width={slabW/2+2} height={y2-y1+2}
-                                      fill="transparent" cursor="pointer"
-                                      onClick={()=>onBafClick(s,i,"back")}/>
-                                    {hasF&&<line x1={sx-2} y1={yMid} x2={sx+slabW/2-1} y2={yMid}
-                                      stroke={C.warn} strokeWidth={1.5} strokeDasharray="3,2"/>}
-                                    {hasB&&<line x1={sx+slabW/2+1} y1={yMid} x2={sx+slabW+2} y2={yMid}
-                                      stroke={C.accent3} strokeWidth={1.5} strokeDasharray="3,2"/>}
-                                    {!hasF&&!hasB&&<line x1={sx+4} y1={yMid} x2={sx+slabW-4} y2={yMid}
-                                      stroke={C.border} strokeWidth={0.3} strokeDasharray="2,4"/>}
+                                  <g key={"bf"+i} style={{cursor:"pointer"}}
+                                    onClick={()=>onBafClick(s,i)}>
+                                    <rect x={sx-2} y={y1-1} width={slabW+4} height={y2-y1+2}
+                                      fill="transparent"/>
+                                    {hasBaf?(
+                                      <line x1={sx-2} y1={yMid} x2={sx+slabW+2} y2={yMid}
+                                        stroke={faceClr} strokeWidth={2} strokeDasharray="3,2"/>
+                                    ):(
+                                      <line x1={sx+4} y1={yMid} x2={sx+slabW-4} y2={yMid}
+                                        stroke={C.border} strokeWidth={0.3} strokeDasharray="2,4"/>
+                                    )}
                                   </g>
                                 );
                               })}
@@ -1237,54 +1244,41 @@ function App() {
                           );
                         })}
 
-                        {/* Inter-slab connections with face+pos */}
+                        {/* Inter-slab connections */}
                         {Array.from({length:Nr-1},(_,ci)=>{
                           const conn=slabConn[ci]||{face:"front",pos:"bottom"};
-                          const sx1=slabX(ci)+slabW+2;
-                          const sx2=slabX(ci+1)-2;
+                          const sx1=slabXf(ci)+slabW+2;
+                          const sx2=slabXf(ci+1)-2;
                           const mx=(sx1+sx2)/2;
                           const yTop=oY+4;
                           const yBot=oY+slabH-4;
                           const yC=conn.pos==="top"?yTop:yBot;
                           const isFront=conn.face==="front";
-                          // Offset line vertically based on face
-                          const yOff=isFront?-3:3;
                           const connClr=isFront?C.warn:C.accent3;
                           const label=(isFront?"F":"B")+(conn.pos==="top"?"▲":"▼");
                           return (
                             <g key={"cn"+ci}>
-                              <path d={"M"+sx1+","+(yC+yOff)+" Q"+mx+","+(yC+yOff)+" "+sx2+","+(yC+yOff)}
+                              <path d={"M"+sx1+","+yC+" Q"+mx+","+yC+" "+sx2+","+yC}
                                 fill="none" stroke={connClr} strokeWidth={1.5} opacity={0.9}/>
-                              <circle cx={sx2-1} cy={yC+yOff} r={2} fill={connClr}/>
-                              {/* Click zones: 4 quadrants */}
-                              <rect x={sx1} y={oY-2} width={(sx2-sx1)/2} height={slabH/2+2}
+                              <circle cx={sx2-1} cy={yC} r={2} fill={connClr}/>
+                              {/* Click zone */}
+                              <rect x={sx1} y={oY-2} width={sx2-sx1} height={slabH+4}
                                 fill="transparent" cursor="pointer" onClick={()=>cycleConn(ci)}/>
-                              <rect x={sx1+(sx2-sx1)/2} y={oY-2} width={(sx2-sx1)/2} height={slabH/2+2}
-                                fill="transparent" cursor="pointer" onClick={()=>cycleConn(ci)}/>
-                              <rect x={sx1} y={oY+slabH/2} width={(sx2-sx1)/2} height={slabH/2+2}
-                                fill="transparent" cursor="pointer" onClick={()=>cycleConn(ci)}/>
-                              <rect x={sx1+(sx2-sx1)/2} y={oY+slabH/2} width={(sx2-sx1)/2} height={slabH/2+2}
-                                fill="transparent" cursor="pointer" onClick={()=>cycleConn(ci)}/>
-                              {/* Label */}
-                              <text x={mx} y={yC+yOff+(conn.pos==="top"?10:-5)} textAnchor="middle"
+                              <text x={mx} y={yC+(conn.pos==="top"?11:-5)} textAnchor="middle"
                                 style={{fontSize:7,fill:connClr,fontWeight:700}}>{label}</text>
                             </g>
                           );
                         })}
                       </svg>
                     </div>
-                    <div style={{display:"flex",gap:8,marginTop:2,flexWrap:"wrap"}}>
-                      <span style={{fontSize:7,color:C.warn}}>── F배플/연결</span>
-                      <span style={{fontSize:7,color:C.accent3}}>── B배플/연결</span>
-                      {Nr>1&&<span style={{fontSize:7,color:C.dim}}>슬랩 사이 클릭: F▼→F▲→B▼→B▲ 순환</span>}
-                    </div>
-                    <div style={{fontSize:7,color:C.dim,marginTop:1}}>
-                      좌측=F배플 · 우측=B배플{Nr>1?" · 슬랩 사이=연결(면+위치) 순환":""}
+                    <div style={{fontSize:7,color:C.dim,marginTop:2}}>
+                      튜브 사이 클릭 = {activeFace==="front"?"Front":"Back"} 배플 토글{Nr>1?" · 슬랩 사이 클릭 = 연결(F▼→F▲→B▼→B▲) 순환":""}
                     </div>
                   </div>
                 );
               } catch(e) { console.error("MCHX baffle error:",e); return <div style={{color:"red",fontSize:10,padding:8}}>Baffle error: {String(e.message||e)}</div>; }
               })()}
+
 
 
             </InputGroup>
