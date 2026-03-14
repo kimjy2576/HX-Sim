@@ -1055,13 +1055,13 @@ function App() {
                   return "front";
                 };
 
-                // Build sets for quick lookup
-                const allInlets=new Set([...inlets,...circInlets].map(t=>t[0]+","+t[1]));
-                const allOutlets=new Set([...outlets,...circOutlets].map(t=>t[0]+","+t[1]));
+                // Build sets for display — user-set only
+                const userInSet=new Set(inlets.map(t=>t[0]+","+t[1]));
+                const userOutSet=new Set(outlets.map(t=>t[0]+","+t[1]));
                 // inlet face map
                 const inletFaces={}, outletFaces={};
-                allInlets.forEach(k=>{const [r,c]=k.split(",").map(Number);inletFaces[k]=getEndpointFace([r,c]);});
-                allOutlets.forEach(k=>{const [r,c]=k.split(",").map(Number);outletFaces[k]=getEndpointFace([r,c]);});
+                userInSet.forEach(k=>{const [r,c]=k.split(",").map(Number);inletFaces[k]=getEndpointFace([r,c]);});
+                userOutSet.forEach(k=>{const [r,c]=k.split(",").map(Number);outletFaces[k]=getEndpointFace([r,c]);});
 
                 // Cell map
                 const cellMap=Array.from({length:Nr},()=>Array.from({length:Nt},()=>null));
@@ -1077,11 +1077,19 @@ function App() {
                 const onFaceTubeClick=(r,c)=>{
                   if(circEditMode==="inlet"||circEditMode==="outlet"){
                     const key=circEditMode==="inlet"?"inlets":"outlets";
+                    const oppKey=circEditMode==="inlet"?"outlets":"inlets";
                     const arr=[...(ftSpec[key]||[])];
+                    const opp=[...(ftSpec[oppKey]||[])];
                     const idx=arr.findIndex(a=>a[0]===r&&a[1]===c);
-                    if(idx>=0) arr.splice(idx,1); else arr.push([r,c]);
-                    uF(key,arr);
-                    // Stay in mode — user clicks button again to exit
+                    if(idx>=0){
+                      arr.splice(idx,1);
+                    } else {
+                      arr.push([r,c]);
+                      // Remove from opposite list
+                      const oi=opp.findIndex(a=>a[0]===r&&a[1]===c);
+                      if(oi>=0) opp.splice(oi,1);
+                    }
+                    setFtSpec(p=>({...p,[key]:arr,[oppKey]:opp}));
                     return;
                   }
                   if(!bendFirst){setBendFirst({r,c});return;}
@@ -1171,8 +1179,8 @@ function App() {
                           const clr=info?circColors[info.circ%circColors.length]:C.surface;
                           const isFirst=bendFirst&&bendFirst.r===r&&bendFirst.c===c;
                           const tk=r+","+c;
-                          const isInlet=allInlets.has(tk)&&(inletFaces[tk]===face||!(bends.front||[]).length&&!(bends.back||[]).length);
-                          const isOutlet=allOutlets.has(tk)&&(outletFaces[tk]===face||!(bends.front||[]).length&&!(bends.back||[]).length);
+                          const isInlet=userInSet.has(tk)&&(inletFaces[tk]===face||!(bends.front||[]).length&&!(bends.back||[]).length);
+                          const isOutlet=userOutSet.has(tk)&&(outletFaces[tk]===face||!(bends.front||[]).length&&!(bends.back||[]).length);
                           const picking=circEditMode==="inlet"||circEditMode==="outlet";
                           const pickClr=circEditMode==="inlet"?C.err:C.success;
                           return (
