@@ -388,8 +388,30 @@ function App() {
   // Temperature profiles
   const refFlowData=(()=>{
     if(!result||!result.segments) return [];
-    const segs=(result.segments||[]).filter(s=>s.tube===0);
-    return segs.map((s,i)=>({
+    const segs=result.segments||[];
+    const allT0=segs.filter(s=>s.tube===0);
+    if(allT0.length===0) return [];
+    // Build segment lookup: (row,seg) → segment
+    const segMap={};
+    allT0.forEach(s=>{segMap[s.row+","+s.seg]=s;});
+    // Determine circuit path order for tube 0
+    // Get unique rows and Nr, Ns
+    const rows=[...new Set(allT0.map(s=>s.row))].sort((a,b)=>a-b);
+    const Nr2=rows.length;
+    const Ns2=Math.max(...allT0.map(s=>s.seg))+1;
+    const cnt=flow==="counter";
+    // Row order: counter starts from last row
+    const rowOrder=cnt?[...rows].reverse():rows;
+    // Build path: alternate seg direction per pass (U-bend)
+    const path=[];
+    rowOrder.forEach((r,ri)=>{
+      const segOrder=(ri%2===0)?Array.from({length:Ns2},(_,i)=>i):Array.from({length:Ns2},(_,i)=>Ns2-1-i);
+      segOrder.forEach(seg=>{
+        const s=segMap[r+","+seg];
+        if(s) path.push(s);
+      });
+    });
+    return path.map((s,i)=>({
       idx:i, name:`R${s.row}S${s.seg}`,
       T_ref:s.T_ref, T_air:s.T_air_local, T_wall:s.T_wall, x:s.x_ref
     }));
