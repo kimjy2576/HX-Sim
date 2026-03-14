@@ -1091,198 +1091,170 @@ function App() {
                 const Nr=mchxSpec.Nr, Nt=mchxSpec.Nt;
                 const circColors=["#4ecdc4","#ff6b6b","#45b7d1","#96ceb4","#feca57","#ff9ff3","#54a0ff","#5f27cd"];
 
-                // Per-slab baffles: [{front:[],back:[]}, ...]
+                // Per-slab baffles
                 const slabBaf=mchxSpec.slab_baffles||Array.from({length:Nr},()=>({front:[],back:[]}));
-                // Inter-slab connections: ["top","bottom",...] (Nr-1 entries)
                 const slabConn=mchxSpec.slab_conn||Array.from({length:Math.max(Nr-1,0)},()=>"bottom");
-                const si=Math.min(mchxSlab,Nr-1);
-                const baf=slabBaf[si]||{front:[],back:[]};
 
-                // Helper: compute passes from one slab's baffles
-                const getBafPasses=(b)=>{
+                // Compute passes per slab
+                const getBP=(b)=>{
                   const all=[...((b||{}).front||[]),...((b||{}).back||[])].sort((a,c)=>a-c);
-                  const uniq=[...new Set(all)];
-                  const p=[];let st=0;
-                  for(const x of uniq){if(x>=st&&x<Nt-1){p.push(Array.from({length:x+1-st},(_,i)=>st+i));st=x+1;}}
-                  p.push(Array.from({length:Nt-st},(_,i)=>st+i));
-                  return p;
+                  const u=[...new Set(all)];const p=[];let st=0;
+                  for(const x of u){if(x>=st&&x<Nt-1){p.push(Array.from({length:x+1-st},(_,i)=>st+i));st=x+1;}}
+                  p.push(Array.from({length:Nt-st},(_,i)=>st+i));return p;
                 };
+                const slabPasses=Array.from({length:Nr},(_,s)=>getBP(slabBaf[s]));
+                let totalPasses=slabPasses.reduce((a,p)=>a+p.length,0);
 
-                const passes=getBafPasses(baf);
-                const np=passes.length;
-                const tubePass={};
-                passes.forEach((p,pi)=>p.forEach(t=>{tubePass[t]=pi;}));
+                // Build global pass→color (sequential across slabs)
+                const tubeColor=Array.from({length:Nr},()=>Array(Nt).fill(C.surface));
+                let gpi=0;
+                for(let s=0;s<Nr;s++){
+                  const sp=slabPasses[s];
+                  const order=(s>0&&slabConn[s-1]==="top")?[...sp].reverse():sp;
+                  order.forEach(pass=>{
+                    const clr=circColors[gpi%circColors.length];
+                    pass.forEach(t=>{tubeColor[s][t]=clr;});
+                    gpi++;
+                  });
+                }
 
-                // Total passes across all slabs
-                let totalPasses=0;
-                for(let s=0;s<Nr;s++) totalPasses+=getBafPasses(slabBaf[s]).length;
-
-                // Baffle click handler
-                const onBafClick=(pos)=>{
-                  const face=bendFace;
-                  const arr=[...(baf[face]||[])];
+                // Click handlers
+                const onBafClick=(slab,pos,face)=>{
+                  const arr=[...(slabBaf[slab][face]||[])];
                   const idx=arr.indexOf(pos);
                   if(idx>=0) arr.splice(idx,1); else arr.push(pos);
                   arr.sort((a,b)=>a-b);
-                  const newBaf=[...slabBaf];
-                  newBaf[si]={...baf,[face]:arr};
-                  uM("slab_baffles",newBaf);
-                };
-                const resetAll=()=>{
-                  uM("slab_baffles",Array.from({length:Nr},()=>({front:[],back:[]})));
-                  uM("slab_conn",Array.from({length:Math.max(Nr-1,0)},()=>"bottom"));
+                  const nb=[...slabBaf];
+                  nb[slab]={...slabBaf[slab],[face]:arr};
+                  uM("slab_baffles",nb);
                 };
                 const toggleConn=(ci)=>{
                   const nc=[...slabConn];
                   nc[ci]=nc[ci]==="top"?"bottom":"top";
                   uM("slab_conn",nc);
                 };
-
-                // SVG
-                const tH=12,gap=6,oY=18,oX=24;
-                const svgW=110,svgH=oY+Nt*tH+(Nt-1)*gap+8;
-
-                const renderManifold=(face)=>{
-                  const isFront=face==="front";
-                  const isActive=bendFace===face;
-                  const faceBaf=baf[face]||[];
-                  return (
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:8,fontWeight:700,textAlign:"center",marginBottom:1,
-                        color:isActive?C.accent:C.dim,cursor:"pointer",
-                        padding:"1px 0",borderRadius:3,background:isActive?C.accent+"15":"transparent"}}
-                        onClick={()=>{setBendFace(face);setBendFirst(null);}}>
-                        {isFront?"FRONT":"BACK"}{isActive?" ✏️":""}
-                      </div>
-                      <svg width={svgW} height={svgH} style={{display:"block",
-                        border:isActive?"1.5px solid "+C.accent:"1px solid "+C.border+"22",
-                        borderRadius:4,cursor:isActive?"pointer":"default"}}>
-                        {Array.from({length:Nt},(_,t)=>{
-                          const y=oY+t*(tH+gap);
-                          const pi=tubePass[t]||0;
-                          const clr=circColors[pi%circColors.length];
-                          return (
-                            <g key={t}>
-                              <rect x={oX} y={y} width={svgW-oX-8} height={tH} rx={2}
-                                fill={clr} opacity={0.7} stroke={clr} strokeWidth={0.5}/>
-                              <text x={oX-3} y={y+tH/2+3} textAnchor="end" style={{fontSize:6,fill:C.dim}}>{t}</text>
-                              <text x={(svgW+oX)/2} y={y+tH/2+3} textAnchor="middle"
-                                style={{fontSize:6,fill:"#fff",fontWeight:600}}>P{pi+1}</text>
-                            </g>
-                          );
-                        })}
-                        {Array.from({length:Nt-1},(_,i)=>{
-                          const y1=oY+i*(tH+gap)+tH;
-                          const y2=oY+(i+1)*(tH+gap);
-                          const yMid=(y1+y2)/2;
-                          const hasBaf=faceBaf.includes(i);
-                          return (
-                            <g key={"b"+i} onClick={()=>onBafClick(i)}
-                              style={{cursor:isActive?"pointer":"default"}}>
-                              <rect x={oX-4} y={y1} width={svgW-oX+2} height={y2-y1} fill="transparent"/>
-                              {hasBaf?(
-                                <line x1={oX-4} y1={yMid} x2={svgW-8} y2={yMid}
-                                  stroke={C.warn} strokeWidth={2} strokeDasharray="3,2"/>
-                              ):(
-                                isActive&&<line x1={oX+4} y1={yMid} x2={svgW-12} y2={yMid}
-                                  stroke={C.border} strokeWidth={0.5} strokeDasharray="2,3"/>
-                              )}
-                            </g>
-                          );
-                        })}
-                        <text x={svgW/2} y={10} textAnchor="middle"
-                          style={{fontSize:7,fill:C.dim,fontWeight:700}}>{np}패스</text>
-                      </svg>
-                    </div>
-                  );
+                const resetAll=()=>{
+                  uM("slab_baffles",Array.from({length:Nr},()=>({front:[],back:[]})));
+                  uM("slab_conn",Array.from({length:Math.max(Nr-1,0)},()=>"bottom"));
                 };
+
+                // SVG layout — all slabs side by side
+                const tH=10,tGap=4,slabW=55,slabGap=36,oX=12,oY=26;
+                const slabH=Nt*tH+(Nt-1)*tGap;
+                const svgW=oX+Nr*slabW+(Nr-1)*slabGap+oX;
+                const svgH=oY+slabH+18;
+                const slabX=(s)=>oX+s*(slabW+slabGap);
+                const tubeY=(t)=>oY+t*(tH+tGap);
 
                 return (
                   <div style={{borderLeft:"2px solid "+C.accent,paddingLeft:10,marginBottom:6,marginTop:8}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                      <span style={{fontSize:9,color:C.accent,fontWeight:700}}>MANIFOLD BAFFLE</span>
+                      <span style={{fontSize:9,color:C.accent,fontWeight:700}}>CIRCUIT DESIGN</span>
                       <span style={{fontSize:9,color:totalPasses>Nr?C.warn:C.success,fontWeight:600}}>
-                        {Nr}슬랩 · 총 {totalPasses}패스
+                        {Nr>1?Nr+"슬랩 · ":""}총 {totalPasses}패스
                       </span>
-                    </div>
-                    <div style={{display:"flex",gap:4,marginBottom:4}}>
-                      <button onClick={resetAll} style={{padding:"2px 6px",borderRadius:3,
+                      <button onClick={resetAll} style={{padding:"2px 6px",borderRadius:3,marginLeft:"auto",
                         border:"1px solid "+C.accent,background:"transparent",color:C.accent,
-                        fontSize:8,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↩ 전체 리셋</button>
+                        fontSize:8,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↩ 리셋</button>
                     </div>
 
-                    {/* Slab tabs */}
-                    {Nr>1&&(
-                      <div style={{display:"flex",gap:0,marginBottom:4}}>
+                    <div style={{overflowX:"auto"}}>
+                      <svg width={svgW} height={svgH} style={{display:"block"}}>
+                        <defs><marker id="arrMCHX" markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto">
+                          <polygon points="0 0, 5 2, 0 4" fill={C.accent}/></marker></defs>
+                        <line x1={oX} y1={svgH-5} x2={svgW-oX} y2={svgH-5}
+                          stroke={C.accent} strokeWidth={1} markerEnd="url(#arrMCHX)"/>
+                        <text x={svgW/2} y={svgH} textAnchor="middle"
+                          style={{fontSize:7,fill:C.accent,fontWeight:700}}>AIR →</text>
+
                         {Array.from({length:Nr},(_,s)=>{
-                          const sp=getBafPasses(slabBaf[s]).length;
+                          const sx=slabX(s);
                           return (
-                            <button key={s} onClick={()=>setMchxSlab(s)}
-                              style={{flex:1,padding:"3px 0",border:"none",cursor:"pointer",
-                                fontSize:9,fontWeight:700,fontFamily:"inherit",
-                                borderBottom:si===s?"2px solid "+C.accent2:"1px solid "+C.border,
-                                background:si===s?C.accent2+"15":C.bg,
-                                color:si===s?C.accent2:C.dim,
-                                borderRadius:si===s?"4px 4px 0 0":"0"}}>
-                              Slab{s} <span style={{fontSize:7,opacity:0.7}}>({sp}p)</span>
-                            </button>
+                            <g key={"s"+s}>
+                              <text x={sx+slabW/2} y={oY-12} textAnchor="middle"
+                                style={{fontSize:8,fill:C.dim,fontWeight:700}}>Slab {s}</text>
+                              <text x={sx+slabW/2} y={oY-3} textAnchor="middle"
+                                style={{fontSize:6,fill:C.dim}}>({slabPasses[s].length}p)</text>
+                              <rect x={sx-2} y={oY-1} width={slabW+4} height={slabH+2} rx={3}
+                                fill="none" stroke={C.border} strokeWidth={0.5}/>
+
+                              {Array.from({length:Nt},(_,t)=>{
+                                const ty=tubeY(t);
+                                return (
+                                  <g key={"t"+t}>
+                                    <rect x={sx} y={ty} width={slabW} height={tH} rx={2}
+                                      fill={tubeColor[s][t]} opacity={0.75}/>
+                                    {s===0&&<text x={sx-2} y={ty+tH/2+3} textAnchor="end"
+                                      style={{fontSize:5,fill:C.dim}}>{t}</text>}
+                                  </g>
+                                );
+                              })}
+
+                              {Array.from({length:Nt-1},(_,i)=>{
+                                const y1=tubeY(i)+tH;
+                                const y2=tubeY(i+1);
+                                const yMid=(y1+y2)/2;
+                                const hasF=(slabBaf[s].front||[]).includes(i);
+                                const hasB=(slabBaf[s].back||[]).includes(i);
+                                return (
+                                  <g key={"bf"+i}>
+                                    <rect x={sx-2} y={y1-1} width={slabW/2+2} height={y2-y1+2}
+                                      fill="transparent" cursor="pointer"
+                                      onClick={()=>onBafClick(s,i,"front")}/>
+                                    <rect x={sx+slabW/2} y={y1-1} width={slabW/2+2} height={y2-y1+2}
+                                      fill="transparent" cursor="pointer"
+                                      onClick={()=>onBafClick(s,i,"back")}/>
+                                    {hasF&&<line x1={sx-2} y1={yMid} x2={sx+slabW/2} y2={yMid}
+                                      stroke={C.warn} strokeWidth={1.5} strokeDasharray="3,2"/>}
+                                    {hasB&&<line x1={sx+slabW/2} y1={yMid} x2={sx+slabW+2} y2={yMid}
+                                      stroke={C.accent3} strokeWidth={1.5} strokeDasharray="3,2"/>}
+                                    {!hasF&&!hasB&&<line x1={sx+4} y1={yMid} x2={sx+slabW-4} y2={yMid}
+                                      stroke={C.border} strokeWidth={0.3} strokeDasharray="2,4"/>}
+                                  </g>
+                                );
+                              })}
+                            </g>
                           );
                         })}
-                      </div>
-                    )}
 
-                    {/* Front/Back tabs */}
-                    <div style={{display:"flex",gap:0,marginBottom:3}}>
-                      {["front","back"].map(f=>(
-                        <button key={f} onClick={()=>{setBendFace(f);setBendFirst(null);}}
-                          style={{flex:1,padding:"4px 0",border:"none",cursor:"pointer",
-                            fontSize:9,fontWeight:700,fontFamily:"inherit",
-                            borderBottom:bendFace===f?"2px solid "+C.accent:"1px solid "+C.border,
-                            background:bendFace===f?C.accent+"15":C.bg,
-                            color:bendFace===f?C.accent:C.dim,
-                            borderRadius:bendFace===f?"4px 4px 0 0":"0"}}>
-                          {f==="front"?"▶ FRONT":"◀ BACK"}
-                          <span style={{fontSize:7,marginLeft:3,opacity:0.6}}>({(baf[f]||[]).length})</span>
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Active manifold */}
-                    <div style={{border:"1px solid "+C.accent+"33",borderRadius:"0 0 4px 4px",padding:3,background:C.bg+"88"}}>
-                      {renderManifold(bendFace)}
-                    </div>
-
-                    {/* Inter-slab connections */}
-                    {Nr>1&&(
-                      <div style={{marginTop:6,borderTop:"1px solid "+C.border,paddingTop:4}}>
-                        <div style={{fontSize:8,color:C.dim,fontWeight:700,marginBottom:3}}>슬랩간 헤더 연결</div>
                         {Array.from({length:Nr-1},(_,ci)=>{
                           const conn=slabConn[ci]||"bottom";
+                          const sx1=slabX(ci)+slabW+2;
+                          const sx2=slabX(ci+1)-2;
+                          const mx=(sx1+sx2)/2;
+                          const yTop=oY+4;
+                          const yBot=oY+slabH-4;
+                          const yC=conn==="top"?yTop:yBot;
                           return (
-                            <div key={ci} style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-                              <span style={{fontSize:8,color:C.dim,minWidth:65}}>Slab{ci}→Slab{ci+1}</span>
-                              {["top","bottom"].map(side=>(
-                                <button key={side} onClick={()=>toggleConn(ci)}
-                                  style={{padding:"2px 6px",borderRadius:3,border:"none",cursor:"pointer",
-                                    fontSize:8,fontWeight:700,fontFamily:"inherit",
-                                    background:conn===side?C.accent2:C.bg,
-                                    color:conn===side?C.bg:C.dim}}>
-                                  {side==="top"?"▲ 상단":"▼ 하단"}
-                                </button>
-                              ))}
-                            </div>
+                            <g key={"cn"+ci}>
+                              <path d={"M"+sx1+","+yC+" Q"+mx+","+yC+" "+sx2+","+yC}
+                                fill="none" stroke={C.accent2} strokeWidth={1.5} opacity={0.8}/>
+                              <circle cx={sx2-1} cy={yC} r={2} fill={C.accent2}/>
+                              <rect x={sx1} y={oY-2} width={sx2-sx1} height={slabH/2+2}
+                                fill="transparent" cursor="pointer" onClick={()=>toggleConn(ci)}/>
+                              <rect x={sx1} y={oY+slabH/2} width={sx2-sx1} height={slabH/2+2}
+                                fill="transparent" cursor="pointer" onClick={()=>toggleConn(ci)}/>
+                              <text x={mx} y={yC+(conn==="top"?10:-4)} textAnchor="middle"
+                                style={{fontSize:6,fill:C.accent2,fontWeight:700}}>
+                                {conn==="top"?"▲":"▼"}</text>
+                            </g>
                           );
                         })}
-                      </div>
-                    )}
-
-                    <div style={{fontSize:7,color:C.dim,marginTop:3}}>
-                      튜브 사이 클릭 = 배플 추가/제거{Nr>1?" · 슬랩 탭 전환 · 헤더 연결 위치 설정":""}
+                      </svg>
+                    </div>
+                    <div style={{display:"flex",gap:8,marginTop:2,flexWrap:"wrap"}}>
+                      <span style={{fontSize:7,color:C.warn}}>── F배플</span>
+                      <span style={{fontSize:7,color:C.accent3}}>── B배플</span>
+                      {Nr>1&&<span style={{fontSize:7,color:C.accent2}}>── 슬랩연결(클릭:상/하)</span>}
+                    </div>
+                    <div style={{fontSize:7,color:C.dim,marginTop:1}}>
+                      좌측=F배플 · 우측=B배플{Nr>1?" · 슬랩 사이=연결전환":""}
                     </div>
                   </div>
                 );
               } catch(e) { console.error("MCHX baffle error:",e); return <div style={{color:"red",fontSize:10,padding:8}}>Baffle error: {String(e.message||e)}</div>; }
               })()}
+
             </InputGroup>
           )}
 
