@@ -238,23 +238,19 @@ function App() {
       if(!refIn.twoPhase&&refIn.T_ref_in!==null) body.T_ref_in_C=refIn.T_ref_in;
       if(hxType==="FT"){
         const spec={...ftSpec};
-        // Generate default single-serpentine bends if none set
+        // Generate default row-by-row serpentine bends if none set
         const cnt=flow==="counter";
         if(!spec.bends||(!(spec.bends.front||[]).length&&!(spec.bends.back||[]).length)){
           const front=[],back=[];
-          let atF2=cnt;
-          for(let col=0;col<spec.Nt;col++){
-            const goD=((col%2===0)===cnt);
-            const rows=goD?Array.from({length:spec.Nr},(_,i)=>spec.Nr-1-i):Array.from({length:spec.Nr},(_,i)=>i);
-            for(let i=0;i<rows.length-1;i++){
-              if(atF2) front.push([rows[i],col,rows[i+1],col]); else back.push([rows[i],col,rows[i+1],col]);
-              atF2=!atF2;
-            }
-            if(col<spec.Nt-1){
-              const lr=rows[rows.length-1];
-              if(atF2) front.push([lr,col,lr,col+1]); else back.push([lr,col,lr,col+1]);
-              atF2=!atF2;
-            }
+          let atF2=true;
+          const sRow=cnt?spec.Nr-1:0, rStep=cnt?-1:1;
+          for(let ri=0;ri<spec.Nr;ri++){
+            const row=sRow+ri*rStep;
+            const goR=(ri%2===0);
+            if(goR){for(let c=0;c<spec.Nt-1;c++){if(atF2)front.push([row,c,row,c+1]);else back.push([row,c,row,c+1]);atF2=!atF2;}}
+            else{for(let c=spec.Nt-1;c>0;c--){if(atF2)front.push([row,c,row,c-1]);else back.push([row,c,row,c-1]);atF2=!atF2;}}
+            if(ri<spec.Nr-1){const nRow=sRow+(ri+1)*rStep;const ec=goR?spec.Nt-1:0;
+              if(atF2)front.push([row,ec,nRow,ec]);else back.push([row,ec,nRow,ec]);atF2=!atF2;}
           }
           spec.bends={front,back};
         }
@@ -278,6 +274,10 @@ function App() {
             path.push([...nx]);visited.add(nk);cur=nx;lk=lk==="front"?"back":"front";}
           circs.push(path);
         }
+        // Correct path direction: counter→inlet at high row, parallel→inlet at low row
+        circs.forEach(ci=>{if(ci.length<2)return;
+          if(cnt&&ci[0][0]<ci[ci.length-1][0])ci.reverse();
+          if(!cnt&&ci[0][0]>ci[ci.length-1][0])ci.reverse();});
         spec.circuits=circs;
         delete spec.bends;
         body.ft_spec=spec;
@@ -787,25 +787,37 @@ function App() {
                 const isStag = ftSpec.layout==="staggered";
                 const counter = flow==="counter";
 
-                // ── Generate default single-serpentine bends ──
+                // ── Generate default single-serpentine bends (row-by-row) ──
+                // Counter: inlet at R_last(air outlet), outlet at R0(air inlet)
+                // Parallel: inlet at R0(air inlet), outlet at R_last(air outlet)
                 const genDefaultBends=(nr,nt,cnt)=>{
                   const front=[],back=[];
-                  let atFront = cnt; // counter: first exit at front face, continuous across columns
-                  for(let col=0;col<nt;col++){
-                    const goDown = ((col%2===0)===cnt);
-                    const rows = goDown ?
-                      Array.from({length:nr},(_,i)=>nr-1-i) :
-                      Array.from({length:nr},(_,i)=>i);
-                    for(let i=0;i<rows.length-1;i++){
-                      const r1=rows[i], r2=rows[i+1];
-                      if(atFront) front.push([r1,col,r2,col]);
-                      else back.push([r1,col,r2,col]);
-                      atFront=!atFront;
+                  let atFront=true; // first bend always Front
+                  const startRow=cnt?nr-1:0;
+                  const rowStep=cnt?-1:1;
+                  for(let ri=0;ri<nr;ri++){
+                    const row=startRow+ri*rowStep;
+                    const goRight=(ri%2===0); // even steps: C0→C_last, odd: C_last→C0
+                    // Between-column bends within this row
+                    if(goRight){
+                      for(let c=0;c<nt-1;c++){
+                        if(atFront) front.push([row,c,row,c+1]);
+                        else back.push([row,c,row,c+1]);
+                        atFront=!atFront;
+                      }
+                    } else {
+                      for(let c=nt-1;c>0;c--){
+                        if(atFront) front.push([row,c,row,c-1]);
+                        else back.push([row,c,row,c-1]);
+                        atFront=!atFront;
+                      }
                     }
-                    if(col<nt-1){
-                      const lastRow=rows[rows.length-1];
-                      if(atFront) front.push([lastRow,col,lastRow,col+1]);
-                      else back.push([lastRow,col,lastRow,col+1]);
+                    // Row shift bend to next row
+                    if(ri<nr-1){
+                      const nextRow=startRow+(ri+1)*rowStep;
+                      const edgeCol=goRight?nt-1:0;
+                      if(atFront) front.push([row,edgeCol,nextRow,edgeCol]);
+                      else back.push([row,edgeCol,nextRow,edgeCol]);
                       atFront=!atFront;
                     }
                   }
@@ -813,7 +825,8 @@ function App() {
                 };
 
                 // Initialize bends if empty
-                const bends = ftSpec.bends && ((ftSpec.bends&&ftSpec.bends.front||[]).length>0 || (ftSpec.bends&&ftSpec.bends.back||[]).length>0)
+                // Initialize bends: undefined → generate default, explicit empty → keep empty
+                const bends = ftSpec.bends !== undefined && ftSpec.bends !== null
                   ? ftSpec.bends : genDefaultBends(Nr,Nt,counter);
 
                 // ── Trace circuits from front/back bends ──
@@ -854,6 +867,13 @@ function App() {
                 };
 
                 const circuits = traceBends(bends);
+                // Correct path direction: counter→inlet at high row, parallel→inlet at low row
+                circuits.forEach(circ=>{
+                  if(circ.length<2) return;
+                  const firstR=circ[0][0], lastR=circ[circ.length-1][0];
+                  if(counter && firstR<lastR) circ.reverse();
+                  if(!counter && firstR>lastR) circ.reverse();
+                });
                 const nc = circuits.length;
 
                 // Cell map
@@ -889,7 +909,7 @@ function App() {
                   setBendFirst(null);
                 };
 
-                const resetToSingle=()=>{
+                const resetToDefault=()=>{
                   uF("bends",genDefaultBends(Nr,Nt,counter));
                   setBendFirst(null);
                 };
@@ -985,9 +1005,9 @@ function App() {
 
                     {/* Toolbar */}
                     <div style={{display:"flex",gap:4,marginBottom:6,alignItems:"center",flexWrap:"wrap"}}>
-                      <button onClick={resetToSingle} style={{padding:"3px 8px",borderRadius:4,
+                      <button onClick={resetToDefault} style={{padding:"3px 8px",borderRadius:4,
                         border:`1px solid ${C.accent}`,background:"transparent",color:C.accent,
-                        fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↩ 단일회로</button>
+                        fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↩ 기본회로</button>
                       <button onClick={clearBends} style={{padding:"3px 8px",borderRadius:4,
                         border:`1px solid ${C.dim}`,background:"transparent",color:C.dim,
                         fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🗑 전체삭제</button>
