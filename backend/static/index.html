@@ -32,7 +32,7 @@ const DEFAULT_FT = {
   wavy_amplitude:0.001,wavy_wavelength:0.01,
   louver_pitch:0.0017,louver_angle:27,
   slit_height:0.001,slit_width:0.007,n_slits:4,
-  N_seg:10,circuit_mode:"row_parallel"
+  N_seg:10,circuit_mode:"custom"
 };
 const DEFAULT_MCHX = {
   W:0.6,H:0.4,D:0.02,n_slabs:1,ch_width:0.001,ch_height:0.0015,
@@ -236,27 +236,48 @@ function App() {
       if(!refIn.twoPhase&&refIn.T_ref_in!==null) body.T_ref_in_C=refIn.T_ref_in;
       if(hxType==="FT"){
         const spec={...ftSpec};
-        // Convert bends → circuits for custom mode
-        if(spec.circuit_mode==="custom"&&spec.bends){
-          const fm={},bm={};
-          (spec.bends.front||[]).forEach(([r1,c1,r2,c2])=>{fm[`${r1},${c1}`]=[r2,c2];fm[`${r2},${c2}`]=[r1,c1];});
-          (spec.bends.back||[]).forEach(([r1,c1,r2,c2])=>{bm[`${r1},${c1}`]=[r2,c2];bm[`${r2},${c2}`]=[r1,c1];});
-          const visited=new Set(),circs=[];
-          for(let c2=0;c2<spec.Nt;c2++) for(let r=0;r<spec.Nr;r++){
-            const k=`${r},${c2}`;
-            if(visited.has(k)) continue;
-            const hasF=k in fm,hasB=k in bm;
-            if((hasF&&hasB)||(!hasF&&!hasB)) continue;
-            const path=[]; let cur=[r,c2]; let lk=hasB?"back":"front";
-            path.push([...cur]);visited.add(`${cur[0]},${cur[1]}`);
-            while(true){const map=lk==="front"?fm:bm;const ck=`${cur[0]},${cur[1]}`;
-              if(!(ck in map))break;const nx=map[ck];path.push([...nx]);
-              visited.add(`${nx[0]},${nx[1]}`);cur=nx;lk=lk==="front"?"back":"front";}
-            if(path.length>1)circs.push(path);
+        // Generate default single-serpentine bends if none set
+        const cnt=flow==="counter";
+        if(!spec.bends||(!spec.bends.front?.length&&!spec.bends.back?.length)){
+          const front=[],back=[];
+          let atF2=cnt;
+          for(let col=0;col<spec.Nt;col++){
+            const goD=((col%2===0)===cnt);
+            const rows=goD?Array.from({length:spec.Nr},(_,i)=>spec.Nr-1-i):Array.from({length:spec.Nr},(_,i)=>i);
+            for(let i=0;i<rows.length-1;i++){
+              if(atF2) front.push([rows[i],col,rows[i+1],col]); else back.push([rows[i],col,rows[i+1],col]);
+              atF2=!atF2;
+            }
+            if(col<spec.Nt-1){
+              const lr=rows[rows.length-1];
+              if(atF2) front.push([lr,col,lr,col+1]); else back.push([lr,col,lr,col+1]);
+              atF2=!atF2;
+            }
           }
-          spec.circuits=circs;
+          spec.bends={front,back};
         }
-        delete spec.bends; // Don't send bends to backend
+        // Convert bends → circuits
+        spec.circuit_mode="custom";
+        const fm2={},bm2={};
+        (spec.bends.front||[]).forEach(([r1,c1,r2,c2])=>{fm2[`${r1},${c1}`]=[r2,c2];fm2[`${r2},${c2}`]=[r1,c1];});
+        (spec.bends.back||[]).forEach(([r1,c1,r2,c2])=>{bm2[`${r1},${c1}`]=[r2,c2];bm2[`${r2},${c2}`]=[r1,c1];});
+        const visited=new Set(),circs=[];
+        for(let c2=0;c2<spec.Nt;c2++) for(let r=0;r<spec.Nr;r++){
+          const k=`${r},${c2}`;
+          if(visited.has(k)) continue;
+          const hasF=k in fm2,hasB=k in bm2;
+          if(hasF&&hasB) continue;
+          if(!hasF&&!hasB){circs.push([[r,c2]]);visited.add(k);continue;}
+          const path=[]; let cur=[r,c2]; let lk=hasB?"back":"front";
+          path.push([...cur]);visited.add(`${cur[0]},${cur[1]}`);
+          while(true){const map=lk==="front"?fm2:bm2;const ck=`${cur[0]},${cur[1]}`;
+            if(!(ck in map))break;const nx=map[ck];const nk=`${nx[0]},${nx[1]}`;
+            if(visited.has(nk))break;
+            path.push([...nx]);visited.add(nk);cur=nx;lk=lk==="front"?"back":"front";}
+          circs.push(path);
+        }
+        spec.circuits=circs;
+        delete spec.bends;
         body.ft_spec=spec;
       } else body.mchx_spec=mchxSpec;
       body.max_outer=solverCfg.max_outer;
@@ -763,58 +784,43 @@ function App() {
                 const circColors = ["#4ecdc4","#ff6b6b","#45b7d1","#96ceb4","#feca57","#ff9ff3","#54a0ff","#5f27cd"];
                 const isStag = ftSpec.layout==="staggered";
                 const counter = flow==="counter";
-                const isCustom = ftSpec.circuit_mode==="custom";
 
-                // ── Preset circuit generator ──
-                const genCircuits=(mode)=>{
-                  if(mode==="single"){
-                    const c=[];
-                    for(let col=0;col<Nt;col++){
-                      const rows=((col%2===0)===counter)?
-                        Array.from({length:Nr},(_,i)=>Nr-1-i):Array.from({length:Nr},(_,i)=>i);
-                      rows.forEach(r=>c.push([r,col]));
+                // ── Generate default single-serpentine bends ──
+                const genDefaultBends=(nr,nt,cnt)=>{
+                  const front=[],back=[];
+                  let atFront = cnt; // counter: first exit at front face, continuous across columns
+                  for(let col=0;col<nt;col++){
+                    const goDown = ((col%2===0)===cnt);
+                    const rows = goDown ?
+                      Array.from({length:nr},(_,i)=>nr-1-i) :
+                      Array.from({length:nr},(_,i)=>i);
+                    for(let i=0;i<rows.length-1;i++){
+                      const r1=rows[i], r2=rows[i+1];
+                      if(atFront) front.push([r1,col,r2,col]);
+                      else back.push([r1,col,r2,col]);
+                      atFront=!atFront;
                     }
-                    return [c];
+                    if(col<nt-1){
+                      const lastRow=rows[rows.length-1];
+                      if(atFront) front.push([lastRow,col,lastRow,col+1]);
+                      else back.push([lastRow,col,lastRow,col+1]);
+                      atFront=!atFront;
+                    }
                   }
-                  if(mode.startsWith("serpentine")){
-                    const grp=parseInt(mode.split("_")[1])||2;
-                    const nc2=Math.max(1,Math.floor(Nt/grp));
-                    const circs=[];
-                    for(let ci=0;ci<nc2;ci++){
-                      const c=[],cols2=[];
-                      for(let g=0;g<grp&&ci*grp+g<Nt;g++) cols2.push(ci*grp+g);
-                      cols2.forEach((col,i)=>{
-                        const rows=((i%2===0)===counter)?
-                          Array.from({length:Nr},(_,j)=>Nr-1-j):Array.from({length:Nr},(_,j)=>j);
-                        rows.forEach(r=>c.push([r,col]));
-                      });
-                      circs.push(c);
-                    }
-                    const rem=Array.from({length:Nt-nc2*grp},(_,i)=>nc2*grp+i);
-                    if(rem.length>0){
-                      const c=[];
-                      rem.forEach((col,i)=>{
-                        const rows=((i%2===0)===counter)?
-                          Array.from({length:Nr},(_,j)=>Nr-1-j):Array.from({length:Nr},(_,j)=>j);
-                        rows.forEach(r=>c.push([r,col]));
-                      });
-                      circs.push(c);
-                    }
-                    return circs;
-                  }
-                  return Array.from({length:Nt},(_,col)=>{
-                    const rows=counter?Array.from({length:Nr},(_,i)=>Nr-1-i):Array.from({length:Nr},(_,i)=>i);
-                    return rows.map(r=>[r,col]);
-                  });
+                  return {front,back};
                 };
 
+                // Initialize bends if empty
+                const bends = ftSpec.bends && (ftSpec.bends.front?.length>0 || ftSpec.bends.back?.length>0)
+                  ? ftSpec.bends : genDefaultBends(Nr,Nt,counter);
+
                 // ── Trace circuits from front/back bends ──
-                const traceBends=(bends)=>{
+                const traceBends=(bnds)=>{
                   const fm={}, bm={};
-                  (bends.front||[]).forEach(([r1,c1,r2,c2])=>{
+                  (bnds.front||[]).forEach(([r1,c1,r2,c2])=>{
                     fm[`${r1},${c1}`]=[r2,c2]; fm[`${r2},${c2}`]=[r1,c1];
                   });
-                  (bends.back||[]).forEach(([r1,c1,r2,c2])=>{
+                  (bnds.back||[]).forEach(([r1,c1,r2,c2])=>{
                     bm[`${r1},${c1}`]=[r2,c2]; bm[`${r2},${c2}`]=[r1,c1];
                   });
                   const visited=new Set(), circuits=[];
@@ -823,7 +829,10 @@ function App() {
                     if(visited.has(k)) continue;
                     const hasF=k in fm, hasB=k in bm;
                     if(hasF&&hasB) continue;
-                    if(!hasF&&!hasB) continue;
+                    if(!hasF&&!hasB){
+                      // Isolated tube = its own single-tube circuit
+                      circuits.push([[r,c]]); visited.add(k); continue;
+                    }
                     const path=[]; let cur=[r,c];
                     let lookFace=hasB?"back":"front";
                     path.push([...cur]); visited.add(`${cur[0]},${cur[1]}`);
@@ -832,19 +841,20 @@ function App() {
                       const ck=`${cur[0]},${cur[1]}`;
                       if(!(ck in map)) break;
                       const next=map[ck];
-                      path.push([...next]); visited.add(`${next[0]},${next[1]}`);
-                      cur=next;
-                      lookFace=lookFace==="front"?"back":"front";
+                      const nk=`${next[0]},${next[1]}`;
+                      if(visited.has(nk)) break;
+                      path.push([...next]); visited.add(nk);
+                      cur=next; lookFace=lookFace==="front"?"back":"front";
                     }
-                    if(path.length>1) circuits.push(path);
+                    circuits.push(path);
                   }
                   return circuits;
                 };
 
-                const bends=ftSpec.bends||{front:[],back:[]};
-                const circuits=isCustom?traceBends(bends):genCircuits(ftSpec.circuit_mode);
-                const nc=circuits.length;
+                const circuits = traceBends(bends);
+                const nc = circuits.length;
 
+                // Cell map
                 const cellMap=Array.from({length:Nr},()=>Array.from({length:Nt},()=>null));
                 circuits.forEach((circ,ci)=>{
                   circ.forEach(([r,c],idx)=>{
@@ -856,7 +866,6 @@ function App() {
 
                 // ── Bend click handler ──
                 const onFaceTubeClick=(r,c)=>{
-                  if(!isCustom) return;
                   if(!bendFirst){setBendFirst({r,c});return;}
                   const dr=Math.abs(r-bendFirst.r), dc=Math.abs(c-bendFirst.c);
                   if(dr+dc===0){setBendFirst(null);return;}
@@ -877,7 +886,15 @@ function App() {
                   uF("bends",{...bends,[face]:arr});
                   setBendFirst(null);
                 };
-                const clearBends=()=>{uF("bends",{front:[],back:[]});setBendFirst(null);};
+
+                const resetToSingle=()=>{
+                  uF("bends",genDefaultBends(Nr,Nt,counter));
+                  setBendFirst(null);
+                };
+                const clearBends=()=>{
+                  uF("bends",{front:[],back:[]});
+                  setBendFirst(null);
+                };
 
                 // ── SVG layout ──
                 const cW=28,cH=28,oX=22,oY=18;
@@ -893,242 +910,119 @@ function App() {
                   const tx=isFront?tubeX:tubeBX;
                   const ty=isFront?tubeY:tubeBY;
                   const faceBends=bends[face]||[];
-                  const isActive=bendFace===face&&isCustom;
+
                   return (
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:9,fontWeight:700,textAlign:"center",marginBottom:2,
-                        color:isActive?C.accent:C.dim,cursor:isCustom?"pointer":"default",
-                        padding:"2px 0",borderRadius:4,background:isActive?`${C.accent}15`:"transparent"}}
-                        onClick={()=>{setBendFace(face);setBendFirst(null);}}>
-                        {isFront?"▶ FRONT":"◀ BACK"}{isActive&&isCustom?" ✏️":""}
-                      </div>
-                      <svg width={svgW} height={svgH} style={{display:"block",
-                        border:isActive?`1.5px solid ${C.accent}`:`1px solid ${C.border}22`,
-                        borderRadius:6,cursor:isActive?"crosshair":"default"}}>
-                        {Array.from({length:Nr},(_,r)=>(
-                          <text key={`rl${r}`} x={tubeX(r,0)} y={oY-4} textAnchor="middle" style={{fontSize:7,fill:C.dim}}>R{r}</text>
-                        ))}
-                        {Array.from({length:Nt},(_,c)=>(
-                          <text key={`cl${c}`} x={4} y={tubeY(0,c)+3} style={{fontSize:7,fill:C.dim}}>C{c}</text>
-                        ))}
-                        {faceBends.map(([r1,c1,r2,c2],bi)=>{
-                          const x1=tx(r1,c1),y1=isFront?tubeY(r1,c1):tubeBY(r1,c1),x2=tx(r2,c2),y2=isFront?tubeY(r2,c2):tubeBY(r2,c2);
-                          const info=cellMap[r1]?.[c1];
-                          const clr=info?circColors[info.circ%circColors.length]:C.accent;
-                          const mx=(x1+x2)/2,my=(y1+y2)/2;
-                          const dx=x2-x1,dy=y2-y1;
-                          const side=isFront?-1:1;
-                          const cx2=mx+dy*0.4*side,cy2=my-dx*0.4*side;
-                          return <path key={`b${bi}`} d={`M${x1},${y1} Q${cx2},${cy2} ${x2},${y2}`}
-                            fill="none" stroke={clr} strokeWidth={2} opacity={0.8}/>;
-                        })}
-                        {Array.from({length:Nr},(_,r)=>
-                          Array.from({length:Nt},(_,c)=>{
-                            const x=tx(r,c),y=isFront?tubeY(r,c):tubeBY(r,c);
-                            const info=cellMap[r][c];
-                            const clr=info?circColors[info.circ%circColors.length]:C.surface;
-                            const isFirst=bendFirst&&bendFirst.r===r&&bendFirst.c===c&&bendFace===face;
-                            return (
-                              <g key={`t${r}-${c}`} onClick={()=>onFaceTubeClick(r,c)}
-                                style={{cursor:isActive?"pointer":"default"}}>
-                                <circle cx={x} cy={y} r={10}
-                                  fill={isFirst?"#fff":info?clr:C.surface}
-                                  stroke={isFirst?C.accent:info?clr:C.border}
-                                  strokeWidth={isFirst?2.5:1} opacity={info?0.9:0.4}/>
-                                <text x={x} y={y+3} textAnchor="middle"
-                                  style={{fontSize:7,fill:isFirst?C.bg:info?"#fff":C.dim,
-                                    fontWeight:700,pointerEvents:"none"}}>
-                                  {info?info.order+1:""}
-                                </text>
-                              </g>
-                            );
-                          })
-                        )}
-                      </svg>
-                    </div>
+                    <svg width={svgW} height={svgH} style={{display:"block",cursor:"crosshair"}}>
+                      {/* Air arrow */}
+                      <defs><marker id={`arrF${face}`} markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto">
+                        <polygon points="0 0, 5 2, 0 4" fill={C.accent}/></marker></defs>
+                      <line x1={oX-2} y1={svgH-4} x2={svgW-10} y2={svgH-4}
+                        stroke={C.accent} strokeWidth={1.5} markerEnd={`url(#arrF${face})`}/>
+                      <text x={svgW/2} y={svgH+4} textAnchor="middle"
+                        style={{fontSize:7,fill:C.accent,fontWeight:700}}>AIR →</text>
+
+                      {/* Row labels (X axis) */}
+                      {Array.from({length:Nr},(_,r)=>(
+                        <text key={`rl${r}`} x={tx(r,0)} y={oY-4} textAnchor="middle"
+                          style={{fontSize:7,fill:C.dim}}>R{r}</text>
+                      ))}
+                      {/* Col labels (Y axis) */}
+                      {Array.from({length:Nt},(_,c)=>(
+                        <text key={`cl${c}`} x={4} y={ty(0,c)+3}
+                          style={{fontSize:7,fill:C.dim}}>C{c}</text>
+                      ))}
+
+                      {/* Bend arcs */}
+                      {faceBends.map(([r1,c1,r2,c2],bi)=>{
+                        const x1=tx(r1,c1),y1=ty(r1,c1),x2=tx(r2,c2),y2=ty(r2,c2);
+                        const info=cellMap[r1]?.[c1];
+                        const clr=info?circColors[info.circ%circColors.length]:C.accent;
+                        const mx=(x1+x2)/2,my=(y1+y2)/2;
+                        const dx=x2-x1,dy=y2-y1;
+                        const side=isFront?-1:1;
+                        const cx2=mx+dy*0.4*side,cy2=my-dx*0.4*side;
+                        return <path key={`b${bi}`} d={`M${x1},${y1} Q${cx2},${cy2} ${x2},${y2}`}
+                          fill="none" stroke={clr} strokeWidth={2} opacity={0.8}/>;
+                      })}
+
+                      {/* Tubes */}
+                      {Array.from({length:Nr},(_,r)=>
+                        Array.from({length:Nt},(_,c)=>{
+                          const x=tx(r,c),y=ty(r,c);
+                          const info=cellMap[r][c];
+                          const clr=info?circColors[info.circ%circColors.length]:C.surface;
+                          const isFirst=bendFirst&&bendFirst.r===r&&bendFirst.c===c;
+                          return (
+                            <g key={`t${r}-${c}`} onClick={()=>onFaceTubeClick(r,c)}
+                              style={{cursor:"pointer"}}>
+                              <circle cx={x} cy={y} r={10}
+                                fill={isFirst?"#fff":info?clr:C.surface}
+                                stroke={isFirst?C.accent:info?clr:C.border}
+                                strokeWidth={isFirst?2.5:1} opacity={info?0.9:0.4}/>
+                              <text x={x} y={y+3} textAnchor="middle"
+                                style={{fontSize:7,fill:isFirst?C.bg:info?"#fff":C.dim,
+                                  fontWeight:700,pointerEvents:"none"}}>
+                                {info?info.order+1:""}
+                              </text>
+                            </g>
+                          );
+                        })
+                      )}
+                    </svg>
                   );
                 };
 
                 return (
                   <div style={{borderLeft:`2px solid ${C.accent}`,paddingLeft:10,marginBottom:6,marginTop:6}}>
-                    <div style={{fontSize:9,color:C.accent,fontWeight:700,marginBottom:4}}>REFRIGERANT CIRCUIT</div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:6}}>
-                      {[{k:"row_parallel",l:"독립"},{k:"serpentine_2",l:"2열"},{k:"serpentine_4",l:"4열"},
-                        {k:"single",l:"단일"},{k:"custom",l:"✏️ 직접"}].map(v=>(
-                        <button key={v.k} onClick={()=>{
-                          uF("circuit_mode",v.k);
-                          if(v.k==="custom"&&!ftSpec.bends) uF("bends",{front:[],back:[]});
-                          setBendFirst(null);
-                        }} style={{padding:"3px 7px",borderRadius:5,border:"none",cursor:"pointer",
-                            fontSize:9,fontWeight:700,fontFamily:"inherit",
-                            background:ftSpec.circuit_mode===v.k?C.accent:C.bg,
-                            color:ftSpec.circuit_mode===v.k?C.bg:C.dim}}>
-                          {v.l}
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                      <span style={{fontSize:9,color:C.accent,fontWeight:700}}>REFRIGERANT CIRCUIT</span>
+                      <span style={{fontSize:9,color:nc>1?C.warn:C.success,fontWeight:600}}>
+                        {nc}회로 {unassigned>0?`· ⚠ 미배정 ${unassigned}`:""}
+                      </span>
+                    </div>
+
+                    {/* Toolbar */}
+                    <div style={{display:"flex",gap:4,marginBottom:6,alignItems:"center",flexWrap:"wrap"}}>
+                      <button onClick={resetToSingle} style={{padding:"3px 8px",borderRadius:4,
+                        border:`1px solid ${C.accent}`,background:"transparent",color:C.accent,
+                        fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↩ 단일회로</button>
+                      <button onClick={clearBends} style={{padding:"3px 8px",borderRadius:4,
+                        border:`1px solid ${C.dim}`,background:"transparent",color:C.dim,
+                        fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🗑 전체삭제</button>
+                      {bendFirst&&<span style={{fontSize:8,color:C.accent}}>
+                        · R{bendFirst.r}C{bendFirst.c} 선택됨</span>}
+                    </div>
+
+                    {/* Face tabs */}
+                    <div style={{display:"flex",gap:0,marginBottom:4}}>
+                      {["front","back"].map(f=>(
+                        <button key={f} onClick={()=>{setBendFace(f);setBendFirst(null);}}
+                          style={{flex:1,padding:"5px 0",border:"none",cursor:"pointer",
+                            fontSize:10,fontWeight:700,fontFamily:"inherit",
+                            borderBottom:bendFace===f?`2px solid ${C.accent}`:`1px solid ${C.border}`,
+                            background:bendFace===f?`${C.accent}15`:C.bg,
+                            color:bendFace===f?C.accent:C.dim,
+                            borderRadius:bendFace===f?"6px 6px 0 0":"0"}}>
+                          {f==="front"?"▶ FRONT":"◀ BACK"}
+                          <span style={{fontSize:8,marginLeft:4,opacity:0.6}}>
+                            ({(bends[f]||[]).length}밴드)
+                          </span>
                         </button>
                       ))}
                     </div>
-                    {isCustom&&(
-                      <div style={{display:"flex",gap:4,marginBottom:4,alignItems:"center",flexWrap:"wrap"}}>
-                        <button onClick={clearBends} style={{padding:"3px 8px",borderRadius:4,
-                          border:`1px solid ${C.dim}`,background:"transparent",color:C.dim,
-                          fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🗑 초기화</button>
-                        <span style={{fontSize:9,color:unassigned>0?C.warn:C.success}}>
-                          {unassigned>0?`⚠ 미배정 ${unassigned}개`:`✅ ${nc}회로 완성`}</span>
-                        {bendFirst&&<span style={{fontSize:8,color:C.accent}}>
-                          · R{bendFirst.r}C{bendFirst.c} 선택됨</span>}
-                      </div>
-                    )}
-                    {isCustom?(
-                      <div style={{display:"flex",gap:4}}>
-                        {renderFace("front")}
-                        {renderFace("back")}
-                      </div>
-                    ):(
-                      <div style={{overflowX:"auto"}}>
-                        <svg width={svgW} height={svgH} style={{display:"block"}}>
-                          <defs><marker id="arrCE3" markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto">
-                            <polygon points="0 0, 5 2, 0 4" fill={C.accent}/></marker></defs>
-                          <line x1={oX-2} y1={svgH-4} x2={svgW-10} y2={svgH-4} stroke={C.accent} strokeWidth={1.5} markerEnd="url(#arrCE3)"/>
-                          <text x={svgW/2} y={svgH+4} textAnchor="middle" style={{fontSize:7,fill:C.accent,fontWeight:700}}>AIR →</text>
-                          {Array.from({length:Nr},(_,r)=>(
-                            <text key={`rl${r}`} x={tubeX(r,0)} y={oY-4} textAnchor="middle" style={{fontSize:7,fill:C.dim}}>R{r}</text>
-                          ))}
-                          {Array.from({length:Nt},(_,c)=>(
-                            <text key={`cl${c}`} x={4} y={tubeY(0,c)+3} style={{fontSize:7,fill:C.dim}}>C{c}</text>
-                          ))}
-                          {circuits.map((circ,ci)=>{
-                            const clr=circColors[ci%circColors.length];
-                            return circ.slice(0,-1).map(([r1,c1],idx)=>{
-                              const [r2,c2]=circ[idx+1];
-                              return <line key={`f${ci}-${idx}`}
-                                x1={tubeX(r1,c1)} y1={tubeY(r1,c1)} x2={tubeX(r2,c2)} y2={tubeY(r2,c2)}
-                                stroke={clr} strokeWidth={c1!==c2?2:1} strokeDasharray={c1!==c2?"4,2":"none"} opacity={0.5}/>;
-                            });
-                          })}
-                          {Array.from({length:Nr},(_,r)=>
-                            Array.from({length:Nt},(_,c)=>{
-                              const info=cellMap[r][c];
-                              const clr=info?circColors[info.circ%circColors.length]:C.surface;
-                              return (
-                                <g key={`t${r}-${c}`}>
-                                  <circle cx={tubeX(r,c)} cy={tubeY(r,c)} r={10}
-                                    fill={info?clr:C.surface} stroke={C.border} strokeWidth={0.5} opacity={info?0.9:0.4}/>
-                                  <text x={tubeX(r,c)} y={tubeY(r,c)+3} textAnchor="middle"
-                                    style={{fontSize:7,fill:info?"#fff":C.dim,fontWeight:700,pointerEvents:"none"}}>
-                                    {info?info.order+1:""}</text>
-                                </g>);
-                            })
-                          )}
-                          <text x={svgW-8} y={14} textAnchor="end" style={{fontSize:8,fill:C.dim,fontWeight:700}}>{nc}회로</text>
-                        </svg>
-                      </div>
-                    )}
-                    {isCustom&&(
-                      <div style={{fontSize:8,color:C.dim,marginTop:3}}>
-                        면 선택(FRONT/BACK) → 튜브 2개 클릭 = 리턴밴드 · 같은 밴드 클릭 = 제거
-                      </div>
-                    )}
+
+                    {/* Active face view */}
+                    <div style={{border:`1px solid ${C.accent}33`,borderRadius:"0 0 6px 6px",padding:4,background:`${C.bg}88`}}>
+                      {renderFace(bendFace)}
+                    </div>
+
+                    <div style={{fontSize:8,color:C.dim,marginTop:3}}>
+                      튜브 2개 클릭 = 리턴밴드 추가/제거 · FRONT/BACK 탭으로 면 전환
+                    </div>
                   </div>
                 );
               })()} 
 
-            </InputGroup>
-          ):(
-            <InputGroup label="📐 MCHX Geometry">
-              <Field label="W" unit="m" value={mchxSpec.W} onChange={v=>uM("W",v)}/>
-              <Field label="H" unit="m" value={mchxSpec.H} onChange={v=>uM("H",v)}/>
-              <Field label="ch_w" unit="mm" value={mchxSpec.ch_width*1000} onChange={v=>uM("ch_width",v/1000)}/>
-              <Field label="ch_h" unit="mm" value={mchxSpec.ch_height*1000} onChange={v=>uM("ch_height",v/1000)}/>
-              <Field label="n_ports" value={mchxSpec.n_ports} onChange={v=>uM("n_ports",parseInt(v)||1)}/>
-              <Field label="N_tubes" value={mchxSpec.N_tubes} onChange={v=>uM("N_tubes",parseInt(v)||1)}/>
-              <Field label="Lp" unit="mm" value={mchxSpec.louver_pitch*1000} onChange={v=>uM("louver_pitch",v/1000)}/>
-              <Field label="θ" unit="°" value={mchxSpec.louver_angle} onChange={v=>uM("louver_angle",v)}/>
-              <Field label="Fp" unit="mm" value={mchxSpec.fin_pitch*1000} onChange={v=>uM("fin_pitch",v/1000)}/>
-              <Field label="Fl" unit="mm" value={mchxSpec.fin_height*1000} onChange={v=>uM("fin_height",v/1000)}/>
-              <Field label="n_slabs" value={mchxSpec.n_slabs} onChange={v=>uM("n_slabs",parseInt(v)||1)}/>
-              <Field label="N_seg" unit="/tube" value={mchxSpec.N_seg} onChange={v=>uM("N_seg",parseInt(v)||1)}/>
-              {/* MCHX Correlation selector */}
-              <div style={{marginBottom:6,marginTop:8}}>
-                <div style={{fontSize:10,color:C.dim,marginBottom:3}}>Air-side j Correlation</div>
-                <div style={{display:"flex",gap:4}}>
-                  {["auto","manual"].map(m=>(
-                    <button key={m} onClick={()=>setAirCorr(p=>({...p,mode:m,selected:m==="auto"?null:p.selected}))} style={{
-                      flex:1,padding:"5px 0",borderRadius:6,border:"none",cursor:"pointer",
-                      fontWeight:700,fontSize:10,fontFamily:"inherit",
-                      background:airCorr.mode===m?(m==="auto"?C.accent:C.accent2):C.bg,
-                      color:airCorr.mode===m?C.bg:C.dim}}>
-                      {m==="auto"?"⚡ Auto":"🔧 Manual"}</button>
-                  ))}
-                </div>
-              </div>
-              {/* MCHX Manual mode */}
-              {airCorr.mode==="manual"&&(()=>{
-                const ranked = result?.correlation_recommendation?.ranked;
-                const mchxCorrs = ['chang_wang1997','chang_wang2006','kim_bullard2002','park_jacobi2009',
-                  'dong2007','sunden_svantesson1992','webb_trauger1991','achaichia_cowell1988_mchx','davenport1983_mchx'];
-                const resultMatchesMchx = ranked?.some(r=>mchxCorrs.includes(r.id));
-                if(!ranked||!resultMatchesMchx) return (
-                  <div style={{fontSize:10,color:C.warn,padding:"8px",marginBottom:8,
-                    background:`${C.warn}11`,border:`1px solid ${C.warn}33`,borderRadius:6}}>
-                    🔄 <b>RUN SIMULATION</b>을 클릭하면 MCHX 추천순 상관식 목록이 표시됩니다
-                  </div>
-                );
-                return (
-                  <div style={{marginBottom:8}}>
-                    {ranked.map(r=>{
-                      const sel = airCorr.selected===r.id;
-                      const clr = r.status==="error"?C.err:r.status==="warning"?C.warn:C.success;
-                      const icon = r.status==="error"?"🚫":r.status==="warning"?"⚠️":"✅";
-                      return (
-                        <div key={r.id} onClick={()=>setAirCorr(p=>({...p,selected:r.id}))}
-                          style={{padding:"6px 8px",marginBottom:3,borderRadius:6,cursor:"pointer",
-                            border:`1px solid ${sel?clr:C.border}`,background:sel?`${clr}15`:C.bg}}>
-                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <span style={{fontSize:10}}>{icon}</span>
-                            <span style={{fontSize:11,fontWeight:sel?700:400,color:sel?C.text:C.dim,flex:1}}>{r.name}</span>
-                            <span style={{fontSize:9,color:clr}}>{r.in_range}</span>
-                          </div>
-                          <div style={{fontSize:9,color:C.dim,marginTop:2}}>
-                            {r.ref} · {r.samples>0?`${r.samples}샘플`:"범용"} · Re {r.Re_range[0]}~{r.Re_range[1]}
-                            {!r.Re_ok&&<span style={{color:C.warn}}> (Re 범위 밖)</span>}
-                          </div>
-                          {sel&&r.warnings.length>0&&(
-                            <div style={{marginTop:3,paddingTop:3,borderTop:`1px solid ${clr}22`}}>
-                              {r.warnings.map((w,i)=>(
-                                <div key={i} style={{fontSize:9,color:w.severity==="error"?C.err:C.warn}}>
-                                  {w.severity==="error"?"🚫":"⚠️"} {w.param}: {w.value} (범위 {w.range})
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-              {/* MCHX Auto mode info */}
-              {airCorr.mode==="auto"&&result?.correlation_recommendation&&hxType==="MCHX"&&(()=>{
-                const rec = result.correlation_recommendation;
-                const usedCorr = result.correlations_used?.air_j;
-                const usedInfo = rec.ranked?.find(r=>r.id===usedCorr);
-                if(!usedInfo) return null;
-                const clr = usedInfo.status==="error"?C.err:usedInfo.status==="warning"?C.warn:C.success;
-                return (
-                  <div style={{fontSize:10,padding:"6px 8px",marginBottom:8,borderRadius:6,
-                    background:`${clr}11`,border:`1px solid ${clr}33`}}>
-                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-                      <span style={{fontWeight:700,color:C.accent}}>⚡ 자동 선택:</span>
-                      <span style={{color:C.text,fontWeight:600}}>{usedInfo.name}</span>
-                      <span style={{fontSize:9,color:clr}}>({usedInfo.in_range})</span>
-                    </div>
-                    <div style={{fontSize:9,color:C.dim,marginBottom:2}}>Re_Lp = {result.Re_Dc}</div>
-                    {rec.reasons?.map((r,i)=>
-                      <div key={i} style={{color:C.dim,fontSize:9,marginTop:1}}>• {r}</div>
-                    )}
-                  </div>
-                );
-              })()}
             </InputGroup>
           )}
 
