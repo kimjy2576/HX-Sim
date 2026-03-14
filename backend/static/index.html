@@ -1038,17 +1038,26 @@ function App() {
                 const inletTube=circuits.length>0?circuits[0][0]:null;
                 const outletTube=circuits.length>0?circuits[0][circuits[0].length-1]:null;
 
-                // Set inlet handler: click endpoint to toggle
-                const onSetInlet=(r,c)=>{
-                  // Check if this tube is an endpoint of any circuit
-                  for(const circ of circuits){
-                    if(circ.length<2) continue;
-                    const first=circ[0], last=circ[circ.length-1];
-                    if((first[0]===r&&first[1]===c)||(last[0]===r&&last[1]===c)){
-                      uF("inlet",[r,c]);
-                      return;
-                    }
-                  }
+                // Determine which FACE each endpoint belongs to
+                // An endpoint's free face (no bend) = where the header connects
+                const getEndpointFace=(tube)=>{
+                  if(!tube) return null;
+                  const k=`${tube[0]},${tube[1]}`;
+                  const hasFront=(bends.front||[]).some(([r1,c1,r2,c2])=>
+                    `${r1},${c1}`===k||`${r2},${c2}`===k);
+                  const hasBack=(bends.back||[]).some(([r1,c1,r2,c2])=>
+                    `${r1},${c1}`===k||`${r2},${c2}`===k);
+                  if(hasFront&&!hasBack) return "back";
+                  if(hasBack&&!hasFront) return "front";
+                  if(!hasFront&&!hasBack) return "front"; // isolated → default front
+                  return null; // both connected (middle tube, shouldn't happen for endpoint)
+                };
+                const inletFace=getEndpointFace(inletTube);
+                const outletFace=getEndpointFace(outletTube);
+
+                // Swap inlet/outlet
+                const swapInlet=()=>{
+                  if(outletTube) uF("inlet",[outletTube[0],outletTube[1]]);
                 };
 
                 // Cell map
@@ -1149,11 +1158,10 @@ function App() {
                           const info=cellMap[r][c];
                           const clr=info?circColors[info.circ%circColors.length]:C.surface;
                           const isFirst=bendFirst&&bendFirst.r===r&&bendFirst.c===c;
-                          const isInlet=inletTube&&inletTube[0]===r&&inletTube[1]===c;
-                          const isOutlet=outletTube&&outletTube[0]===r&&outletTube[1]===c;
+                          const isInlet=inletTube&&inletTube[0]===r&&inletTube[1]===c&&inletFace===face;
+                          const isOutlet=outletTube&&outletTube[0]===r&&outletTube[1]===c&&outletFace===face;
                           return (
                             <g key={`t${r}-${c}`} onClick={()=>onFaceTubeClick(r,c)}
-                              onDoubleClick={(e)=>{e.preventDefault();onSetInlet(r,c);}}
                               style={{cursor:"pointer"}}>
                               <circle cx={x} cy={y} r={10}
                                 fill={isFirst?"#fff":isInlet?C.err:isOutlet?C.success:info?clr:C.surface}
@@ -1189,6 +1197,9 @@ function App() {
                       <button onClick={clearBends} style={{padding:"3px 8px",borderRadius:4,
                         border:`1px solid ${C.dim}`,background:"transparent",color:C.dim,
                         fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🗑 전체삭제</button>
+                      {nc>0&&<button onClick={swapInlet} style={{padding:"3px 8px",borderRadius:4,
+                        border:`1px solid ${C.warn}`,background:"transparent",color:C.warn,
+                        fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↔ 입출구 전환</button>}
                       {bendFirst&&<span style={{fontSize:8,color:C.accent}}>
                         · R{bendFirst.r}C{bendFirst.c} 선택됨</span>}
                     </div>
@@ -1217,7 +1228,7 @@ function App() {
                     </div>
 
                     <div style={{fontSize:8,color:C.dim,marginTop:3}}>
-                      클릭: 밴드 추가/제거 · 더블클릭: 입구(IN) 지정 · FRONT/BACK 탭 전환
+                      클릭: 밴드 추가/제거 · ↔ 입출구 전환 버튼으로 IN/OUT 교체
                     </div>
                   </div>
                 );
