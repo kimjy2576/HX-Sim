@@ -109,6 +109,69 @@ function LineChartSVG({data, lines, height=200}) {
   );
 }
 
+function TempProfileChart({data, lines, height=240, unit="°C"}) {
+  if (!data||data.length<2) return null;
+  const W=620,H=height-50,padL=48,padR=10,padT=20,padB=30;
+  const pw=(W-padL-padR)/(data.length-1);
+  // Shared Y-axis: global min/max across ALL lines
+  let gMin=Infinity,gMax=-Infinity;
+  lines.forEach(({key})=>{data.forEach(d=>{const v=d[key];if(v!=null){gMin=Math.min(gMin,v);gMax=Math.max(gMax,v);}});});
+  const margin=(gMax-gMin)*0.08||1;
+  gMin-=margin; gMax+=margin;
+  const range=gMax-gMin||1;
+  const toY=(v)=>padT+H*(1-((v-gMin)/range));
+  const toX=(i)=>padL+i*pw;
+  // Y-axis ticks
+  const nTick=5;
+  const ticks=Array.from({length:nTick+1},(_,i)=>gMin+range*i/nTick);
+  // Label skip for dense X axis
+  const skip=Math.max(1,Math.floor(data.length/15));
+  return (
+    <svg viewBox={`0 0 ${W} ${height}`} style={{width:"100%",height}}>
+      {/* Grid */}
+      {ticks.map((tv,i)=>(
+        <g key={"g"+i}>
+          <line x1={padL} x2={W-padR} y1={toY(tv)} y2={toY(tv)}
+            stroke={C.border} strokeWidth={0.5} strokeDasharray="3 3"/>
+          <text x={padL-4} y={toY(tv)+3} textAnchor="end"
+            style={{fontSize:8,fill:C.dim}}>{tv.toFixed(1)}</text>
+        </g>
+      ))}
+      {/* Y axis label */}
+      <text x={8} y={padT+H/2} textAnchor="middle"
+        style={{fontSize:8,fill:C.dim,fontWeight:700}}
+        transform={`rotate(-90,8,${padT+H/2})`}>{unit}</text>
+      {/* Lines */}
+      {lines.map(({key,color,label,dash})=>{
+        const pts=data.map((d,i)=>`${toX(i)},${toY(d[key]||0)}`).join(" ");
+        return (
+          <g key={key}>
+            <polyline points={pts} fill="none" stroke={color} strokeWidth={2}
+              strokeDasharray={dash||"none"}/>
+            {data.length<=30&&data.map((d,i)=>(
+              <circle key={i} cx={toX(i)} cy={toY(d[key]||0)} r={2.5} fill={color}/>
+            ))}
+          </g>
+        );
+      })}
+      {/* Legend */}
+      {lines.map(({key,color,label,dash},li)=>(
+        <g key={"L"+key}>
+          <line x1={padL+li*130} y1={8} x2={padL+li*130+20} y2={8}
+            stroke={color} strokeWidth={2} strokeDasharray={dash||"none"}/>
+          <text x={padL+li*130+24} y={11}
+            style={{fontSize:9,fill:color,fontWeight:600}}>{label}</text>
+        </g>
+      ))}
+      {/* X labels */}
+      {data.map((d,i)=>(
+        i%skip===0&&<text key={i} x={toX(i)} y={height-5} fill={C.dim} fontSize={7}
+          textAnchor="middle">{d.name}</text>
+      ))}
+    </svg>
+  );
+}
+
 /* ===== UI Components ===== */
 function InputGroup({label,children}) {
   return (
@@ -317,9 +380,37 @@ function App() {
   },[hxType,mode,airIn,refIn,flow,ftSpec,mchxSpec,airCorr,fCorr,refCorr,solverCfg,dpRefCorr,corrFact]);
 
   const segData=(result&&result.segments||[]).filter(s=>s.tube===0).map(s=>({
-    name:`R${s.row}S${s.seg}`,Q:s.Q,T_wall:s.T_wall,h_i:s.h_i,x:s.x_ref,eta_o:s.eta_o,dp_ref:s.dp_ref
+    name:`R${s.row}S${s.seg}`,Q:s.Q,T_wall:s.T_wall,T_ref:s.T_ref,T_air:s.T_air_local,
+    h_i:s.h_i,x:s.x_ref,eta_o:s.eta_o,dp_ref:s.dp_ref,row:s.row,seg:s.seg
   }))||[];
   const rowData=(result&&result.row_Q||[]).map((q,i)=>({name:`R${i}`,Q:q}))||[];
+
+  // Temperature profiles
+  const refFlowData=(()=>{
+    if(!result||!result.segments) return [];
+    const segs=(result.segments||[]).filter(s=>s.tube===0);
+    return segs.map((s,i)=>({
+      idx:i, name:`R${s.row}S${s.seg}`,
+      T_ref:s.T_ref, T_air:s.T_air_local, T_wall:s.T_wall, x:s.x_ref
+    }));
+  })();
+  const airFlowData=(()=>{
+    if(!result||!result.segments) return [];
+    const segs=result.segments||[];
+    const rowMap={};
+    segs.forEach(s=>{
+      if(!rowMap[s.row]) rowMap[s.row]={Tr:0,Ta:0,Tw:0,n:0};
+      rowMap[s.row].Tr+=s.T_ref; rowMap[s.row].Ta+=s.T_air_local;
+      rowMap[s.row].Tw+=s.T_wall; rowMap[s.row].n++;
+    });
+    const rows=Object.keys(rowMap).map(Number).sort((a,b)=>a-b);
+    return rows.map(r=>({
+      name:`R${r}`,
+      T_ref:Math.round(rowMap[r].Tr/rowMap[r].n*10)/10,
+      T_air:Math.round(rowMap[r].Ta/rowMap[r].n*10)/10,
+      T_wall:Math.round(rowMap[r].Tw/rowMap[r].n*10)/10,
+    }));
+  })();
   const mc=mode==="evap"?C.accent:C.accent3;
 
   return (
@@ -1740,6 +1831,31 @@ function App() {
 
               {tab==="charts"&&(
                 <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                  {/* Temperature profiles */}
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}>
+                    <div style={{fontSize:11,color:mc,fontWeight:700,marginBottom:6,letterSpacing:1}}>
+                      냉매 유동방향 온도분포 (Tube 0)
+                    </div>
+                    {refFlowData.length>1&&(
+                      <TempProfileChart data={refFlowData} height={260} lines={[
+                        {key:"T_ref",color:mc,label:"T_ref"},
+                        {key:"T_air",color:C.accent,label:"T_air"},
+                        {key:"T_wall",color:C.warn,label:"T_wall",dash:"4,3"},
+                      ]}/>
+                    )}
+                  </div>
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}>
+                    <div style={{fontSize:11,color:mc,fontWeight:700,marginBottom:6,letterSpacing:1}}>
+                      공기 유동방향 온도분포 (Row 평균)
+                    </div>
+                    {airFlowData.length>1&&(
+                      <TempProfileChart data={airFlowData} height={260} lines={[
+                        {key:"T_ref",color:mc,label:"T_ref"},
+                        {key:"T_air",color:C.accent,label:"T_air"},
+                        {key:"T_wall",color:C.warn,label:"T_wall",dash:"4,3"},
+                      ]}/>
+                    )}
+                  </div>
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}>
                     <div style={{fontSize:11,color:C.accent,fontWeight:700,marginBottom:6,letterSpacing:1}}>Q PER SEGMENT (Tube 0)</div>
                     <BarChart data={segData} dataKey="Q" nameKey="name" color={mc} height={200}/>
