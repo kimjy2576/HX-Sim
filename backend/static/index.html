@@ -603,6 +603,17 @@ function App() {
               <Field label="Di" unit="mm" value={Math.round(ftSpec.Di*1e5)/100} onChange={v=>uF("Di",v/1000)}/>
               <Field label="Pt" unit="mm" value={Math.round(ftSpec.Pt*1e4)/10} onChange={v=>uF("Pt",v/1000)}/>
               <Field label="Pl" unit="mm" value={Math.round(ftSpec.Pl*1e4)/10} onChange={v=>uF("Pl",v/1000)}/>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                <span style={{fontSize:11,color:C.dim,minWidth:50}}>Layout</span>
+                {["staggered","inline"].map(l=>(
+                  <button key={l} onClick={()=>uF("layout",l)} style={{
+                    flex:1,padding:"5px 0",borderRadius:6,border:"none",cursor:"pointer",
+                    fontWeight:700,fontSize:10,fontFamily:"inherit",
+                    background:ftSpec.layout===l?C.accent:C.bg,
+                    color:ftSpec.layout===l?C.bg:C.dim}}>
+                    {l==="staggered"?"Staggered":"Inline"}</button>
+                ))}
+              </div>
               <Field label="Row" unit="열" value={ftSpec.Nr} onChange={v=>uF("Nr",parseInt(v)||1)}/>
               <Field label="Column" unit="단" value={ftSpec.Nt} onChange={v=>uF("Nt",parseInt(v)||1)}/>
               <Field label="FPI" unit="fins/in" value={ftSpec.FPI} onChange={v=>uF("FPI",v)}/>
@@ -1617,9 +1628,10 @@ function App() {
                       <rect key={"fin"+i} x="60" y={40+i*40} width="240" height="2" fill={C.dim} opacity="0.3" rx="1"/>
                     ))}
 
-                    {/* Tubes — staggered 3 rows × 2 cols */}
+                    {/* Tubes — dynamic layout */}
                     {[[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]].map(([r,c])=>{
-                      const cx=140+c*100+(r%2===1?50:0);
+                      const isStg=ftSpec.layout==="staggered";
+                      const cx=140+c*100+(isStg&&r%2===1?50:0);
                       const cy=80+r*80;
                       return (
                         <g key={"tube"+r+c}>
@@ -1671,20 +1683,22 @@ function App() {
                       ["Di","Inner tube diameter"],
                       ["Pt","Transverse pitch"],
                       ["Pl","Longitudinal pitch"],
+                      ["Layout",ftSpec.layout==="staggered"?"Staggered":"Inline"],
                       ["Nr","Number of rows (air dir)"],
                       ["Nt","Number of columns"],
                       ["FPI","Fins per inch"],
                       ["N_seg","Segments per tube"],
                       ["W","Tube length (width)"],
-                      ["H","Coil height"],
                     ].map(([p,d],i)=>(
                       <text key={p} x="340" y={55+i*13} style={{fontSize:8,fill:C.dim}}>
                         <tspan style={{fill:C.warn,fontWeight:600}}>{p}</tspan>  {d}
                       </text>
                     ))}
 
-                    {/* Staggered label */}
-                    <text x="190" y="270" textAnchor="middle" style={{fontSize:8,fill:C.dim,fontStyle:"italic"}}>Staggered arrangement (offset rows)</text>
+                    {/* Layout label */}
+                    <text x="190" y="270" textAnchor="middle" style={{fontSize:8,fill:C.dim,fontStyle:"italic"}}>
+                      {ftSpec.layout==="staggered"?"Staggered arrangement (offset rows)":"Inline arrangement (aligned rows)"}
+                    </text>
                   </svg>
                 ):(
                   <svg viewBox="0 0 480 320" style={{width:"100%",maxWidth:480}}>
