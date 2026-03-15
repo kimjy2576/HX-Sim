@@ -235,7 +235,6 @@ function App() {
   const [bendFirst,setBendFirst]=useState(null);
   const [mchxSlab,setMchxSlab]=useState(0);
   const [circEditMode,setCircEditMode]=useState("bend"); // "bend", "inlet", "outlet"
-  const [modelInfoOpen,setModelInfoOpen]=useState(false);
   const [result,setResult]=useState(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -461,69 +460,6 @@ function App() {
         {/* LEFT PANEL */}
         <div style={{width:320,flexShrink:0,padding:16,borderRight:`1px solid ${C.border}`,
           overflowY:"auto",maxHeight:"calc(100vh - 60px)"}}>
-
-          {/* Model Description (collapsible) */}
-          <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
-            <div onClick={()=>setModelInfoOpen(!modelInfoOpen)} style={{display:"flex",alignItems:"center",gap:6,
-              padding:"10px 14px",cursor:"pointer",background:C.card,userSelect:"none"}}>
-              <span style={{fontSize:12}}>{modelInfoOpen?"▼":"▶"}</span>
-              <span style={{fontSize:11,fontWeight:700,color:C.accent,letterSpacing:1}}>PHYSICS MODEL</span>
-              <span style={{fontSize:9,color:C.dim,marginLeft:"auto"}}>Level 2 Tube-Segment</span>
-            </div>
-            {modelInfoOpen&&(
-              <div style={{padding:"10px 14px",fontSize:9,lineHeight:1.6,color:C.dim,background:C.bg,
-                borderTop:`1px solid ${C.border}`}}>
-                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>Segment-by-Segment 열전달 모델</div>
-                <div style={{marginBottom:6}}>
-                  각 튜브를 N_seg개의 세그먼트로 분할하여 냉매 유동 경로를 따라 순차 계산합니다.
-                  세그먼트마다 냉매 상태(x, T)가 업데이트되며, 과열↔2상↔과냉 전이를 정확하게 추적합니다.
-                </div>
-
-                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>공기측</div>
-                <div style={{marginBottom:6}}>
-                  3D 공기 온도 배열 T_air[col][seg][row]로 추적합니다.
-                  Row 0 = 공기 입구, Row N = 공기 출구이며, 각 (col, seg) 위치에서 독립적인 공기 pencil이
-                  row 방향으로 진행하면서 냉매와 열교환합니다.
-                </div>
-
-                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>냉매측</div>
-                <div style={{marginBottom:6}}>
-                  써킷 경로를 따라 세그먼트별로 진행합니다. 각 세그먼트에서
-                  T_wall 반복 수렴(under-relax α=0.7)으로 Q를 계산하고,
-                  냉매 상태를 업데이트합니다.
-                  2상: dx = Q/(m·h_fg), 단상: dT = Q/(m·cp).
-                  경계 통과 시 잔여 Q를 다음 상태로 분배합니다.
-                </div>
-
-                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>수렴 구조</div>
-                <div style={{marginBottom:6}}>
-                  <span style={{color:C.accent}}>Inner loop</span>: T_wall 수렴 (α=0.7, tol_T=0.05K, tol_Q=0.5W)
-                  {" → "}
-                  <span style={{color:C.accent}}>Outer loop</span>: 공기-냉매 결합 수렴 (max_iter, rel_tol)
-                </div>
-
-                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>상관식</div>
-                <div style={{marginBottom:2}}>
-                  <span style={{color:C.warn}}>Air-side</span>: j-factor (27종) + f-factor (8종) — 자동/수동 선택
-                </div>
-                <div style={{marginBottom:2}}>
-                  <span style={{color:C.warn}}>Ref evap</span>: Chen, Gungor-Winterton, Kandlikar, Kim-Mudawar 등 6종
-                </div>
-                <div style={{marginBottom:2}}>
-                  <span style={{color:C.warn}}>Ref cond</span>: Shah, Cavallini, Dobson-Chato, Kim-Mudawar 등 5종
-                </div>
-                <div style={{marginBottom:6}}>
-                  <span style={{color:C.warn}}>Ref ΔP</span>: Friedel, Lockhart-Martinelli, Müller-Steinhagen, Kim-Mudawar
-                </div>
-
-                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>물성치</div>
-                <div>
-                  CoolProp 라이브러리 기반. 포화 물성은 (key, round(P,0))로 캐싱하여 374× 속도 향상.
-                  {REFRIGERANTS.length}종 냉매 지원: {REFRIGERANTS.slice(0,5).join(", ")}...
-                </div>
-              </div>
-            )}
-          </div>
 
           <InputGroup label="Configuration">
             <div style={{display:"flex",gap:6,marginBottom:8}}>
@@ -1655,14 +1591,52 @@ function App() {
         {/* RIGHT PANEL */}
         <div style={{flex:1,padding:20,overflowY:"auto",maxHeight:"calc(100vh - 60px)"}}>
           {!result?(
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",
-              flexDirection:"column",gap:12}}>
-              <div style={{fontSize:48}}>🔬</div>
-              <div style={{color:C.dim,fontSize:14}}>Configure → <b style={{color:C.accent}}>RUN SIMULATION</b></div>
-              <div style={{color:C.dim,fontSize:11,maxWidth:450,textAlign:"center",lineHeight:1.7}}>
-                Level 2 Tube-Segment Model<br/>
-                Nr×Nt×N_seg 세그먼트별 독립 계산, T_wall 반복 수렴<br/>
-                FT-HX / MCHX 증발기·응축기 단품 해석
+            <div style={{padding:"20px 10px",maxWidth:520,margin:"0 auto"}}>
+              {/* Header */}
+              <div style={{textAlign:"center",marginBottom:20}}>
+                <div style={{fontSize:14,fontWeight:700,color:C.accent,letterSpacing:1,marginBottom:4}}>
+                  {hxType==="FT"?"Fin-Tube Heat Exchanger":"Microchannel Heat Exchanger"}
+                </div>
+                <div style={{fontSize:11,color:C.dim}}>
+                  Level 2 · Tube-Segment Model · {mode==="evap"?"Evaporator":"Condenser"}
+                </div>
+              </div>
+
+              {/* Model cards */}
+              {[
+                {icon:"📐",title:"이산화 구조",color:C.accent,
+                  desc:hxType==="FT"
+                    ?"Nr(Row)×Nt(Col)×N_seg 세그먼트 단위 해석. 각 튜브는 N_seg개로 분할되어 독립적으로 열전달을 계산합니다. 커스텀 써킷 설계(Front/Back 리턴밴드)를 지원합니다."
+                    :"Nr(슬랩)×Nt(튜브)×N_seg 세그먼트 단위 해석. 루버 핀 + 멀티포트 채널 기반. 배플(매니폴드 분할)로 멀티패스 설계를 지원합니다."},
+                {icon:"🌀",title:"공기측 모델",color:C.accent,
+                  desc:"3D 온도 추적 T_air[col][seg][row]. 각 (col,seg) 위치마다 독립적인 공기 pencil이 row 방향으로 관통하며 냉매와 교차류 열교환. "
+                    +(hxType==="FT"
+                      ?"j-factor 상관식 27종 (Wang, Kim, Gray 등) + f-factor 8종. 핀 효율은 Schmidt 등가 원형 핀."
+                      :"j-factor: Chang-Wang (1997) louver fin. f-factor: Chang-Wang (1997). 핀 효율은 직선 핀 모델.")},
+                {icon:"❄️",title:"냉매측 모델 ("+(mode==="evap"?"증발":"응축")+")",color:mc,
+                  desc:"써킷 경로를 따라 세그먼트 순차 계산. 과열↔2상↔과냉 전이를 경계 Q 분배로 정확히 추적. "
+                    +(mode==="evap"
+                      ?"증발 HTC: Chen, Gungor-Winterton, Kandlikar, Kim-Mudawar, Bertsch, Sun-Mishima (6종)"
+                      :"응축 HTC: Shah, Cavallini, Dobson-Chato, Kim-Mudawar, Koyama (5종)")
+                    +". 압력강하: Friedel, Lockhart-Martinelli, Müller-Steinhagen, Kim-Mudawar (4종)."},
+                {icon:"🔄",title:"수렴 알고리즘",color:C.warn,
+                  desc:"2중 반복 구조. Inner: 세그먼트별 T_wall 수렴 (α=0.7, tol_T=0.05K, tol_Q=0.5W, max 12회). Outer: 공기-냉매 결합 수렴 (사용자 설정 max_iter, rel_tol). 적응적 under-relaxation (ω=0.3~0.7)."},
+                {icon:"🧪",title:"물성치 라이브러리",color:C.dim,
+                  desc:"CoolProp 기반 "+REFRIGERANTS.length+"종 냉매: "+REFRIGERANTS.join(", ")+". 포화 물성 캐싱 (key, round(P,0)) → 374× 속도 향상. 습공기 물성은 CoolProp HAPropsSI."},
+              ].map(({icon,title,color,desc})=>(
+                <div key={title} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+                  padding:"12px 14px",marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                    <span style={{fontSize:16}}>{icon}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:color}}>{title}</span>
+                  </div>
+                  <div style={{fontSize:10,lineHeight:1.7,color:C.dim}}>{desc}</div>
+                </div>
+              ))}
+
+              {/* Run prompt */}
+              <div style={{textAlign:"center",marginTop:16}}>
+                <div style={{color:C.dim,fontSize:12}}>← 설정 후 <b style={{color:C.accent}}>RUN SIMULATION</b></div>
               </div>
             </div>
           ):(
