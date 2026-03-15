@@ -235,6 +235,7 @@ function App() {
   const [bendFirst,setBendFirst]=useState(null);
   const [mchxSlab,setMchxSlab]=useState(0);
   const [circEditMode,setCircEditMode]=useState("bend"); // "bend", "inlet", "outlet"
+  const [modelInfoOpen,setModelInfoOpen]=useState(false);
   const [result,setResult]=useState(null);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -460,6 +461,69 @@ function App() {
         {/* LEFT PANEL */}
         <div style={{width:320,flexShrink:0,padding:16,borderRight:`1px solid ${C.border}`,
           overflowY:"auto",maxHeight:"calc(100vh - 60px)"}}>
+
+          {/* Model Description (collapsible) */}
+          <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+            <div onClick={()=>setModelInfoOpen(!modelInfoOpen)} style={{display:"flex",alignItems:"center",gap:6,
+              padding:"10px 14px",cursor:"pointer",background:C.card,userSelect:"none"}}>
+              <span style={{fontSize:12}}>{modelInfoOpen?"▼":"▶"}</span>
+              <span style={{fontSize:11,fontWeight:700,color:C.accent,letterSpacing:1}}>PHYSICS MODEL</span>
+              <span style={{fontSize:9,color:C.dim,marginLeft:"auto"}}>Level 2 Tube-Segment</span>
+            </div>
+            {modelInfoOpen&&(
+              <div style={{padding:"10px 14px",fontSize:9,lineHeight:1.6,color:C.dim,background:C.bg,
+                borderTop:`1px solid ${C.border}`}}>
+                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>Segment-by-Segment 열전달 모델</div>
+                <div style={{marginBottom:6}}>
+                  각 튜브를 N_seg개의 세그먼트로 분할하여 냉매 유동 경로를 따라 순차 계산합니다.
+                  세그먼트마다 냉매 상태(x, T)가 업데이트되며, 과열↔2상↔과냉 전이를 정확하게 추적합니다.
+                </div>
+
+                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>공기측</div>
+                <div style={{marginBottom:6}}>
+                  3D 공기 온도 배열 T_air[col][seg][row]로 추적합니다.
+                  Row 0 = 공기 입구, Row N = 공기 출구이며, 각 (col, seg) 위치에서 독립적인 공기 pencil이
+                  row 방향으로 진행하면서 냉매와 열교환합니다.
+                </div>
+
+                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>냉매측</div>
+                <div style={{marginBottom:6}}>
+                  써킷 경로를 따라 세그먼트별로 진행합니다. 각 세그먼트에서
+                  T_wall 반복 수렴(under-relax α=0.7)으로 Q를 계산하고,
+                  냉매 상태를 업데이트합니다.
+                  2상: dx = Q/(m·h_fg), 단상: dT = Q/(m·cp).
+                  경계 통과 시 잔여 Q를 다음 상태로 분배합니다.
+                </div>
+
+                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>수렴 구조</div>
+                <div style={{marginBottom:6}}>
+                  <span style={{color:C.accent}}>Inner loop</span>: T_wall 수렴 (α=0.7, tol_T=0.05K, tol_Q=0.5W)
+                  {" → "}
+                  <span style={{color:C.accent}}>Outer loop</span>: 공기-냉매 결합 수렴 (max_iter, rel_tol)
+                </div>
+
+                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>상관식</div>
+                <div style={{marginBottom:2}}>
+                  <span style={{color:C.warn}}>Air-side</span>: j-factor (27종) + f-factor (8종) — 자동/수동 선택
+                </div>
+                <div style={{marginBottom:2}}>
+                  <span style={{color:C.warn}}>Ref evap</span>: Chen, Gungor-Winterton, Kandlikar, Kim-Mudawar 등 6종
+                </div>
+                <div style={{marginBottom:2}}>
+                  <span style={{color:C.warn}}>Ref cond</span>: Shah, Cavallini, Dobson-Chato, Kim-Mudawar 등 5종
+                </div>
+                <div style={{marginBottom:6}}>
+                  <span style={{color:C.warn}}>Ref ΔP</span>: Friedel, Lockhart-Martinelli, Müller-Steinhagen, Kim-Mudawar
+                </div>
+
+                <div style={{fontWeight:700,color:C.text,fontSize:10,marginBottom:4}}>물성치</div>
+                <div>
+                  CoolProp 라이브러리 기반. 포화 물성은 (key, round(P,0))로 캐싱하여 374× 속도 향상.
+                  {REFRIGERANTS.length}종 냉매 지원: {REFRIGERANTS.slice(0,5).join(", ")}...
+                </div>
+              </div>
+            )}
+          </div>
 
           <InputGroup label="Configuration">
             <div style={{display:"flex",gap:6,marginBottom:8}}>
